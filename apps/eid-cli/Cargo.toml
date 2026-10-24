@@ -1,0 +1,20 @@
+[package]
+name = "eid-cli"
+description = "Reads a Serbian eID card from the terminal and prints it, or saves the PDF print-out"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "eid"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+eid-core = { workspace = true }
+eid-pcsc = { workspace = true }
+pollster = { workspace = true }
+eid-pdf = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }

@@ -1,0 +1,13 @@
+[package]
+name = "eid-pcsc"
+description = "Reaches card readers through the system PC/SC service (macOS, Windows, Linux pcsc-lite)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+eid-core = { workspace = true }
+pcsc = "2.9"

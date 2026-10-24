@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+# The web app only builds for wasm32; `cargo build` on the host skips it.
+default-members = ["crates/eid-core", "crates/eid-pdf", "crates/eid-pcsc", "apps/eid-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.dependencies]
+eid-core = { path = "crates/eid-core" }
+eid-pdf = { path = "crates/eid-pdf" }
+eid-pcsc = { path = "crates/eid-pcsc" }
+eid-webusb = { path = "crates/eid-webusb" }
+eid-ui = { path = "crates/eid-ui" }
+
+thiserror = "2"
+pollster = "0.4"
+eframe = { version = "0.37", default-features = false }
+egui = { version = "0.37", default-features = false }
+log = "0.4"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# The browser build: the wasm is downloaded on every visit.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+strip = "debuginfo"

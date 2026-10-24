@@ -1,0 +1,16 @@
+[package]
+name = "eid-pdf"
+description = "The eID print-out as a PDF, laid out like the official reader's"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+eid-core = { workspace = true }
+# Pure Rust, so the same PDF comes out in the browser. JPEG photos pass through unchanged.
+krilla = { version = "0.8", default-features = false, features = ["simple-text", "raster-images"] }
+# Glyph advances for line wrapping; the same version krilla's shaper already uses.
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
