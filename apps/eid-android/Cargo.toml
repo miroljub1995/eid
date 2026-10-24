@@ -31,6 +31,9 @@ eframe = { workspace = true, features = ["glow", "android-native-activity"] }
 # Names the AndroidApp type eframe needs; the same winit eframe uses.
 winit = { version = "0.30", default-features = false }
 pollster = { workspace = true }
+# stderr goes nowhere on Android; errors and panics go to logcat (`adb logcat -s eid`).
+android_logger = "0.15"
+log = "0.4"
 
 [package.metadata.android]
 package = "rs.eid.viewer"

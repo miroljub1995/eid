@@ -53,7 +53,8 @@ ANDROID_HOME=… ANDROID_NDK_ROOT=… cargo apk build --release -p eid-android
 ```
 
 When a reader is plugged in, Android asks once whether eID may use it. Saved PDFs go to
-`Android/data/rs.eid.viewer/files`.
+`Android/data/rs.eid.viewer/files`; on Android 11 and later the Files app hides that folder, so copy
+them off over USB. Errors are logged to logcat (`adb logcat -s eid`).
 
 There is no browser build: browsers don't let web pages use smart card readers (Chrome counts them as a
 protected USB class).

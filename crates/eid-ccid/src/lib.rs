@@ -24,6 +24,9 @@ pub const MAX_MESSAGE: usize = 65_538 + codec::HEADER_LEN;
 /// How many replies to wait through (stale ones, time extensions) before giving up on the reader.
 const MAX_REPLIES: usize = 64;
 
+/// Zero-length reads tolerated in one exchange before the reader counts as gone.
+const MAX_EMPTY_READS: usize = 4;
+
 /// One reader's slot 0.
 pub struct Ccid<B> {
     bulk: B,
@@ -62,6 +65,7 @@ impl<B: Bulk> Ccid<B> {
         self.bulk.write(&codec::command(kind, seq, [0; 3], data))?;
 
         let mut buffer = Vec::new();
+        let mut empty = 0;
         for _ in 0..MAX_REPLIES {
             // A message can span several transfers; keep reading until it is whole.
             let header = loop {
@@ -71,8 +75,13 @@ impl<B: Bulk> Ccid<B> {
                     break header;
                 }
                 let chunk = self.bulk.read(MAX_MESSAGE)?;
+                // A zero-length packet ends a reply that filled whole transfers; skip a few of them.
                 if chunk.is_empty() {
-                    return Err(Error::Transport("the reader closed the connection".into()));
+                    empty += 1;
+                    if empty > MAX_EMPTY_READS {
+                        return Err(Error::Transport("the reader stopped answering".into()));
+                    }
+                    continue;
                 }
                 buffer.extend_from_slice(&chunk);
                 if Header::parse(&buffer).is_some_and(|h| h.total() > MAX_MESSAGE) {
@@ -187,6 +196,21 @@ mod tests {
         assert!(!ccid.has_card().unwrap());
         assert!(ccid.has_card().unwrap());
         assert!(matches!(ccid.power_on(), Err(Error::Transport(e)) if e.contains("wrong way")));
+    }
+
+    #[test]
+    fn skips_zero_length_packets_but_not_forever() {
+        let mut script = Script::default();
+        script
+            .replies
+            .extend([vec![], reply(DATA_BLOCK, 0, 0, 0, &[0x90, 0x00])]);
+        assert_eq!(Ccid::new(&mut script).transmit(&[0]).unwrap(), [0x90, 0x00]);
+
+        let mut script = Script::default();
+        script.replies.extend(std::iter::repeat_n(vec![], 10));
+        assert!(
+            matches!(Ccid::new(&mut script).transmit(&[0]), Err(Error::Transport(e)) if e.contains("stopped"))
+        );
     }
 
     #[test]

@@ -14,6 +14,11 @@ use winit::platform::android::activity::AndroidApp;
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
+    let logs = android_logger::Config::default()
+        .with_tag("eid")
+        .with_max_level(log::LevelFilter::Info);
+    android_logger::init_once(logs);
+    std::panic::set_hook(Box::new(|info| log::error!("{info}")));
     let documents = app.external_data_path();
     let options = eframe::NativeOptions {
         android_app: Some(app),
@@ -34,6 +39,7 @@ fn android_main(app: AndroidApp) {
                     let platform = match Android::new() {
                         Ok(platform) => platform,
                         Err(error) => {
+                            log::error!("USB host unavailable: {error}");
                             let status = eid_core::Status::Failed { reader: None, error };
                             event_tx.send(eid_core::Event::Status(status)).ok();
                             return;
@@ -55,7 +61,7 @@ fn android_main(app: AndroidApp) {
         }),
     );
     if let Err(error) = result {
-        eprintln!("eid: {error}");
+        log::error!("the app failed: {error}");
     }
 }
 

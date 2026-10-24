@@ -13,6 +13,8 @@ use jni::{JNIEnv, JavaVM};
 const SMART_CARD_CLASS: i32 = 0x0B;
 const USB_ENDPOINT_XFER_BULK: i32 = 2;
 const USB_DIR_IN: i32 = 0x80;
+/// Android before 9 caps one bulk transfer at 16 KB; eid-ccid joins the pieces of longer replies.
+const MAX_TRANSFER: usize = 16_384;
 /// Per bulk transfer: a card answers in well under a second; a reader asking for more time sends
 /// time-extension messages within this.
 const TRANSFER_TIMEOUT_MS: i32 = 5_000;
@@ -34,17 +36,17 @@ struct Open {
 }
 
 impl Android {
-    /// Adopts the Java VM and Activity that `android-activity` published for this app.
+    /// Adopts the Java VM and the Application context that `android-activity` published for this app.
     pub fn new() -> Result<Self, Error> {
         let ctx = ndk_context::android_context();
         // SAFETY: `android-activity` publishes the process's JavaVM pointer, valid for its lifetime.
         let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.map_err(jni_error)?;
         let context = {
             let env = vm.attach_current_thread().map_err(jni_error)?;
-            // SAFETY: the Activity's global reference, valid while the app runs; we take our own
+            // SAFETY: the Application's global reference, valid while the app runs; we take our own
             // global reference to it and never delete the borrowed one.
-            let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
-            env.new_global_ref(activity).map_err(jni_error)?
+            let application = unsafe { JObject::from_raw(ctx.context().cast()) };
+            env.new_global_ref(application).map_err(jni_error)?
         };
         Ok(Android {
             vm: Arc::new(vm),
@@ -229,15 +231,15 @@ impl Bulk for JniBulk {
     }
 
     fn read(&mut self, max: usize) -> Result<Vec<u8>, Error> {
+        let max = max.min(MAX_TRANSFER);
         let mut env = self.vm.attach_current_thread().map_err(jni_error)?;
         let len = i32::try_from(max).map_err(|_| Error::Transport("transfer too large".into()))?;
         let buffer = env.new_byte_array(len).map_err(|e| checked(&mut env, e))?;
-        let received = self.transfer(&self.ep_in, &buffer, max)?;
-        let mut bytes = env
-            .convert_byte_array(&buffer)
+        let received = self.transfer(&self.ep_in, &buffer, max)?.min(max);
+        let mut bytes = vec![0i8; received];
+        env.get_byte_array_region(&buffer, 0, &mut bytes)
             .map_err(|e| checked(&mut env, e))?;
-        bytes.truncate(received);
-        Ok(bytes)
+        Ok(bytes.into_iter().map(|b| b as u8).collect())
     }
 }
 
@@ -366,9 +368,26 @@ fn open_reader(
     if connection.is_null() {
         return Err(Error::Transport("could not open the reader".into()));
     }
+    // Any failure from here on closes the connection, so the reader isn't left claimed until GC.
+    let opened = configure(env, vm, &connection, interface, path, name);
+    if opened.is_err() {
+        call(env, &connection, "close", "()V", &[]).ok();
+    }
+    opened
+}
+
+/// Claims the reader's interface on an open connection and finds its endpoints and exchange level.
+fn configure(
+    env: &mut JNIEnv,
+    vm: &Arc<JavaVM>,
+    connection: &JObject,
+    interface: &JObject,
+    path: String,
+    name: String,
+) -> Result<Open, Error> {
     let claimed = call(
         env,
-        &connection,
+        connection,
         "claimInterface",
         "(Landroid/hardware/usb/UsbInterface;Z)Z",
         &[JValue::Object(interface), JValue::Bool(1)],
@@ -376,7 +395,6 @@ fn open_reader(
     .z()
     .map_err(jni_error)?;
     if !claimed {
-        call(env, &connection, "close", "()V", &[]).ok();
         return Err(Error::Transport("could not claim the reader".into()));
     }
 
@@ -408,9 +426,8 @@ fn open_reader(
             *slot = Some(env.new_global_ref(&endpoint).map_err(jni_error)?);
         }
     }
-    let connection = env.new_global_ref(&connection).map_err(jni_error)?;
+    let connection = env.new_global_ref(connection).map_err(jni_error)?;
     let (Some(ep_in), Some(ep_out)) = (ep_in, ep_out) else {
-        call(env, connection.as_obj(), "close", "()V", &[]).ok();
         return Err(Error::Transport("the reader has no bulk endpoints".into()));
     };
 
