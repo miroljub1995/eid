@@ -37,8 +37,9 @@ rustup target add aarch64-apple-ios
 BUNDLE_ID=rs.example.eid SIGN_IDENTITY="Apple Development: …" PROFILE=eid.mobileprovision apps/eid-ios/bundle.sh
 ```
 
-Install the signed `eID.app` from Xcode's Devices window. Saved PDFs go to the app's folder in the
-Files app. The simulator can't reach USB readers, so test on a device.
+It prints the path of the signed `eID.ipa`; install that from Xcode's Devices window. Without
+`SIGN_IDENTITY` and `PROFILE` it builds `eID-unsigned.ipa` instead, which must be signed before it
+installs. Saved PDFs go to the app's folder in the Files app. The simulator can't reach USB readers, so test on a device.
 
 **Android.** Needs Android 8 or later, a phone or tablet with USB host (USB OTG) support, and a reader
 that exchanges whole APDUs (most current readers do). The APK builds in Docker, with nothing to install
@@ -60,6 +61,29 @@ them off over USB. Errors are logged to logcat (`adb logcat -s eid`).
 
 There is no browser build: browsers don't let web pages use smart card readers (Chrome counts them as a
 protected USB class).
+
+## Releases
+
+Pushing a version tag builds every platform and publishes a GitHub release:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+| File | Contents |
+|---|---|
+| `eid-macos-universal.zip` | `eID.app` and the `eid` CLI, Apple silicon and Intel |
+| `eid-windows-x64.zip` | `eid-viewer.exe` and `eid.exe` |
+| `eid-linux-x64.tar.gz`, `eid-linux-arm64.tar.gz` | `eid-viewer` and `eid`; need `pcscd` (`apt install pcscd`) |
+| `eid-android.apk` | the Android app |
+| `eID-unsigned.ipa` | the iOS/iPadOS app, to be signed with your Apple identity before it installs |
+| `SHA256SUMS` | checksums of the above |
+
+The macOS app is signed ad hoc, not notarised, so the first launch needs right-click › Open. The APK is
+signed with the repository's `ANDROID_KEYSTORE` / `ANDROID_KEYSTORE_PASSWORD` secrets (a base64
+keystore and its password) when they are set, and with a debug key otherwise. Running the workflow by
+hand (Actions › Release › Run workflow) builds everything without publishing; the files are then
+attached to the run.
 
 ## Layout
 

@@ -1,19 +1,31 @@
 #!/bin/sh
-# Builds eID.app for an iPhone/iPad and signs it. Needs Xcode (the iOS SDK) and a signing identity.
+# Builds eID.app for iPhone/iPad and packages it as eID.ipa; prints the .ipa's path. Needs Xcode.
 #
-#   BUNDLE_ID=rs.example.eid SIGN_IDENTITY="Apple Development: …" PROFILE=eid.mobileprovision ./bundle.sh
+#   apps/eid-ios/bundle.sh
 #
-# Install the result with Xcode's Devices window or `xcrun devicectl device install app`.
+# Signed when SIGN_IDENTITY ("Apple Development: …") and PROFILE (a .mobileprovision for BUNDLE_ID)
+# are set; otherwise the .ipa is unsigned and must be signed before it installs.
 set -eu
 cd "$(dirname "$0")"
-: "${BUNDLE_ID:?set BUNDLE_ID}" "${SIGN_IDENTITY:?set SIGN_IDENTITY}" "${PROFILE:?set PROFILE}"
+BUNDLE_ID=${BUNDLE_ID:-rs.eid.viewer}
 TARGET=aarch64-apple-ios
+TARGET_DIR=${CARGO_TARGET_DIR:-../../target}
 
 cargo build --release --target "$TARGET" -p eid-ios
-APP=../../target/$TARGET/release/eID.app
-rm -rf "$APP" && mkdir -p "$APP"
-cp "../../target/$TARGET/release/eid-ios" "$APP/"
-sed "s/\$(BUNDLE_ID)/$BUNDLE_ID/" Info.plist > "$APP/Info.plist"
-cp "$PROFILE" "$APP/embedded.mobileprovision"
-codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$APP"
-echo "$APP"
+out="$TARGET_DIR/$TARGET/release"
+rm -rf "$out/Payload" && mkdir -p "$out/Payload/eID.app"
+app="$out/Payload/eID.app"
+cp "$out/eid-ios" "$app/"
+sed "s/\$(BUNDLE_ID)/$BUNDLE_ID/" Info.plist > "$app/Info.plist"
+plutil -lint "$app/Info.plist" > /dev/null
+
+if [ -n "${SIGN_IDENTITY:-}" ] && [ -n "${PROFILE:-}" ]; then
+    cp "$PROFILE" "$app/embedded.mobileprovision"
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$app"
+    ipa="$out/eID.ipa"
+else
+    ipa="$out/eID-unsigned.ipa"
+fi
+rm -f "$ipa"
+(cd "$out" && zip -qr "$(basename "$ipa")" Payload)
+echo "$ipa"
