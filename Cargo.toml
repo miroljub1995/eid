@@ -13,6 +13,8 @@ eid-core = { path = "crates/eid-core" }
 eid-pdf = { path = "crates/eid-pdf" }
 eid-pcsc = { path = "crates/eid-pcsc" }
 eid-ctk = { path = "crates/eid-ctk" }
+eid-ccid = { path = "crates/eid-ccid" }
+eid-android-usb = { path = "crates/eid-android-usb" }
 eid-ui = { path = "crates/eid-ui" }
 
 thiserror = "2"

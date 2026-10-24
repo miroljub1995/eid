@@ -1,0 +1,12 @@
+[package]
+name = "eid-ccid"
+description = "USB CCID smart card reader protocol over any bulk transport (Android USB host, raw USB)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+eid-core = { workspace = true }

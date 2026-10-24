@@ -1,0 +1,52 @@
+[package]
+name = "eid-android"
+description = "Serbian eID viewer for Android: USB card readers through the USB host API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# `android_main` is the entry point the Android activity calls; exporting it unmangled counts as
+# unsafe code, so this crate relaxes the workspace's `forbid` to `deny` for that one item.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[lib]
+name = "eid_android_app"
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+eid-core = { workspace = true }
+eid-ui = { workspace = true }
+eid-android-usb = { workspace = true }
+eframe = { workspace = true, features = ["glow", "android-native-activity"] }
+# Names the AndroidApp type eframe needs; the same winit eframe uses.
+winit = { version = "0.30", default-features = false }
+pollster = { workspace = true }
+
+[package.metadata.android]
+package = "rs.eid.viewer"
+apk_name = "eid"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 34
+
+[[package.metadata.android.uses_feature]]
+name = "android.hardware.usb.host"
+required = true
+
+[package.metadata.android.application]
+label = "eID"
+
+[package.metadata.android.application.activity]
+orientation = "unspecified"
