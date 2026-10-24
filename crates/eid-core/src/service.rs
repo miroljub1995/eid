@@ -47,20 +47,32 @@ pub enum Status {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What [`run`] reports.
+#[derive(Debug, Clone)]
+pub enum Event {
+    /// The readers the platform sees, whenever one comes or goes or a card is inserted or removed.
+    Readers(Vec<Reader>),
+    Status(Status),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Read the inserted card again.
     Reread,
+    /// Use this reader, or `None` to pick automatically: the first one holding a card.
+    Select(Option<String>),
 }
 
 const WAIT_MS: u32 = 500;
 const RETRY_MS: u32 = 1000;
 
-/// Watches the readers until `commands` is closed, calling `emit` whenever the status changes.
+/// Watches the readers until `commands` is closed, calling `emit` whenever the readers or the status
+/// change.
 ///
-/// Uses the first reader that holds a card, or else the first reader. A failed read is retried once
+/// Uses the selected reader while it is plugged in; otherwise the first reader that holds a card, or
+/// else the first reader. A failed read is retried once
 /// on the next poll if a card is still in: it was most likely pulled and pushed back mid-read.
-pub async fn run<P: Platform>(mut platform: P, commands: Receiver<Command>, mut emit: impl FnMut(Status)) {
+pub async fn run<P: Platform>(mut platform: P, commands: Receiver<Command>, mut emit: impl FnMut(Event)) {
     #[derive(PartialEq)]
     enum Seen {
         Failed(Error),
@@ -70,33 +82,43 @@ pub async fn run<P: Platform>(mut platform: P, commands: Receiver<Command>, mut 
     }
     let mut seen = None;
     let mut retry = false;
+    let mut selected: Option<String> = None;
+    let mut listed: Option<Vec<Reader>> = None;
     loop {
         let mut reread = std::mem::take(&mut retry);
         loop {
             match commands.try_recv() {
                 Ok(Command::Reread) => reread = true,
+                Ok(Command::Select(reader)) => selected = reader,
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return,
             }
         }
 
         let now = match platform.readers(WAIT_MS).await {
-            Ok(readers) => match readers.iter().find(|r| r.has_card).or(readers.first()) {
-                None => Seen::NoReader,
-                Some(Reader {
-                    name,
-                    has_card: false,
-                }) => Seen::NoCard(name.clone()),
-                Some(Reader { name, has_card: true }) => Seen::Card(name.clone()),
-            },
+            Ok(readers) => {
+                let now = match pick(&readers, selected.as_deref()) {
+                    None => Seen::NoReader,
+                    Some(Reader {
+                        name,
+                        has_card: false,
+                    }) => Seen::NoCard(name.clone()),
+                    Some(Reader { name, has_card: true }) => Seen::Card(name.clone()),
+                };
+                if listed.as_ref() != Some(&readers) {
+                    emit(Event::Readers(readers.clone()));
+                    listed = Some(readers);
+                }
+                now
+            }
             Err(error) => Seen::Failed(error),
         };
         if let Seen::Failed(error) = &now {
             if seen.as_ref() != Some(&now) {
-                emit(Status::Failed {
+                emit(Event::Status(Status::Failed {
                     reader: None,
                     error: error.clone(),
-                });
+                }));
             }
             seen = Some(now);
             platform.sleep(RETRY_MS).await;
@@ -106,21 +128,21 @@ pub async fn run<P: Platform>(mut platform: P, commands: Receiver<Command>, mut 
             continue;
         }
 
-        match &now {
-            Seen::Failed(_) => {}
-            Seen::NoReader => emit(Status::NoReader),
-            Seen::NoCard(reader) => emit(Status::NoCard {
+        let status = match &now {
+            Seen::Failed(_) => continue,
+            Seen::NoReader => Status::NoReader,
+            Seen::NoCard(reader) => Status::NoCard {
                 reader: reader.clone(),
-            }),
+            },
             Seen::Card(reader) => {
-                emit(Status::Reading {
+                emit(Event::Status(Status::Reading {
                     reader: reader.clone(),
-                });
+                }));
                 let read = match platform.connect(reader).await {
                     Ok(mut card) => read_eid(&mut card).await,
                     Err(error) => Err(error),
                 };
-                emit(match read {
+                match read {
                     Ok(document) => Status::Ready {
                         reader: reader.clone(),
                         document: Arc::new(document),
@@ -133,11 +155,20 @@ pub async fn run<P: Platform>(mut platform: P, commands: Receiver<Command>, mut 
                             error,
                         }
                     }
-                });
+                }
             }
-        }
+        };
+        emit(Event::Status(status));
         seen = Some(now);
     }
+}
+
+/// The selected reader while it is there, else the first one holding a card, else the first one.
+fn pick<'a>(readers: &'a [Reader], selected: Option<&str>) -> Option<&'a Reader> {
+    selected
+        .and_then(|name| readers.iter().find(|r| r.name == name))
+        .or_else(|| readers.iter().find(|r| r.has_card))
+        .or_else(|| readers.first())
 }
 
 #[cfg(test)]
@@ -151,7 +182,9 @@ mod tests {
     struct Script {
         steps: VecDeque<Vec<Reader>>,
         commands: Option<mpsc::Sender<Command>>,
+        /// Sends `send` while answering this listing (1-based).
         reread_at: usize,
+        send: Command,
         calls: usize,
         /// Connections that fail before the card answers, as when it is pulled mid-read.
         failures: usize,
@@ -165,7 +198,7 @@ mod tests {
             if self.calls == self.reread_at
                 && let Some(tx) = &self.commands
             {
-                tx.send(Command::Reread).ok();
+                tx.send(self.send.clone()).ok();
             }
             match self.steps.pop_front() {
                 Some(step) => Ok(step),
@@ -209,6 +242,7 @@ mod tests {
             steps,
             commands: Some(tx),
             reread_at: 5,
+            send: Command::Reread,
             calls: 0,
             failures: 0,
         };
@@ -235,7 +269,11 @@ mod tests {
 
     fn statuses(script: Script, rx: mpsc::Receiver<Command>) -> Vec<Status> {
         let mut seen = Vec::new();
-        pollster::block_on(run(script, rx, |s| seen.push(s)));
+        pollster::block_on(run(script, rx, |e| {
+            if let Event::Status(s) = e {
+                seen.push(s);
+            }
+        }));
         seen
     }
 
@@ -259,6 +297,7 @@ mod tests {
             steps,
             commands: Some(tx),
             reread_at: 0,
+            send: Command::Reread,
             calls: 0,
             failures: 1,
         };
@@ -276,6 +315,7 @@ mod tests {
             steps,
             commands: Some(tx),
             reread_at: 0,
+            send: Command::Reread,
             calls: 0,
             failures: 5,
         };
@@ -283,5 +323,42 @@ mod tests {
             names(&statuses(script, rx)),
             ["reading", "failed", "reading", "failed", "failed"]
         );
+    }
+
+    fn named(name: &str, has_card: bool) -> Reader {
+        Reader {
+            name: name.into(),
+            has_card,
+        }
+    }
+
+    #[test]
+    fn reads_the_selected_reader() {
+        let (tx, rx) = mpsc::channel();
+        let both = vec![named("A", true), named("B", true)];
+        let steps = VecDeque::from([both.clone(), both.clone(), both.clone(), vec![named("A", true)]]);
+        let send = Command::Select(Some("B".into()));
+        let script = Script {
+            steps,
+            commands: Some(tx),
+            reread_at: 1,
+            send,
+            calls: 0,
+            failures: 0,
+        };
+        let mut events = Vec::new();
+        pollster::block_on(run(script, rx, |e| events.push(e)));
+        let read: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Status(Status::Ready { reader, .. }) => Some(reader.as_str()),
+                _ => None,
+            })
+            .collect();
+        // Automatic picks A first; the selection then switches to B; when B is unplugged it falls back to
+        // A, which is read again because it is a different reader from the last one shown.
+        assert_eq!(read, ["A", "B", "A"]);
+        let lists = events.iter().filter(|e| matches!(e, Event::Readers(_))).count();
+        assert_eq!(lists, 2, "the reader list is reported only when it changes");
     }
 }

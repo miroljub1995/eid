@@ -47,13 +47,9 @@ mod web {
                                 },
                             ));
                         } else {
-                            let error = eid_core::Error::Transport(
-                                "Ovaj pregledač ne podržava WebUSB. Otvorite stranicu u Chrome-u ili Edge-u."
-                                    .into(),
-                            );
-                            status_tx
-                                .send(eid_core::Status::Failed { reader: None, error })
-                                .ok();
+                            let error = eid_core::Error::NotAllowed("this browser has no WebUSB".into());
+                            let status = eid_core::Status::Failed { reader: None, error };
+                            status_tx.send(eid_core::Event::Status(status)).ok();
                         }
                         Ok(Box::new(EidApp::new(
                             &cc.egui_ctx,

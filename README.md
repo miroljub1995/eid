@@ -22,6 +22,7 @@ cargo run -p eid-cli -- --pdf lična-karta.pdf
 ```
 
 The CLI waits for a card, prints the data and can save the PDF (`--pdf`) and the photo (`--photo`).
+With several readers attached, `--reader NAME` picks one; the app has a reader picker in its header.
 
 **Browser.** Needs a Chromium browser (Chrome, Edge), because they are the only ones with WebUSB. Build
 with [trunk](https://trunkrs.dev):
@@ -79,7 +80,8 @@ pub trait Platform {
 
 They are async because WebUSB is. A blocking backend like PC/SC just does its work inside the future and
 runs on its own thread under `pollster`. `eid_core::run(platform, commands, emit)` watches the readers
-and reads a card when one is inserted. It reports a `Status` (`NoReader`, `NoCard`, `Reading`, `Ready`,
+and reads a card when one is inserted, from the reader picked with `Command::Select` or else the first
+one holding a card. It reports the reader list and a `Status` (`NoReader`, `NoCard`, `Reading`, `Ready`,
 `Failed`), which the UI shows. All the card logic, like application selection, T=0 `61xx`/`6Cxx`
 follow-ups and file headers, lives in core, so a backend only moves bytes.
 

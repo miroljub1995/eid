@@ -12,7 +12,7 @@ use egui::{
     Sense, Stroke, TextureHandle, Ui, vec2,
 };
 
-use eid_core::{Command, DocumentKind, EidDocument, Error, Status};
+use eid_core::{Command, DocumentKind, EidDocument, Error, Event, Reader, Status};
 use theme::{BOLD, Tokens};
 
 /// What the UI needs from the platform it runs on.
@@ -32,9 +32,12 @@ pub trait Host {
 
 pub struct EidApp {
     host: Box<dyn Host>,
-    statuses: Receiver<Status>,
+    events: Receiver<Event>,
     commands: Sender<Command>,
     status: Status,
+    readers: Vec<Reader>,
+    /// The reader the user picked, or `None` for automatic.
+    selected: Option<String>,
     photo: Option<TextureHandle>,
     notice: Option<Notice>,
 }
@@ -54,26 +57,35 @@ const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S)
 const REREAD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
 
 impl EidApp {
-    /// `statuses` comes from [`eid_core::run`], which `commands` drives.
+    /// `events` comes from [`eid_core::run`], which `commands` drives.
     pub fn new(
         ctx: &egui::Context,
         host: Box<dyn Host>,
-        statuses: Receiver<Status>,
+        events: Receiver<Event>,
         commands: Sender<Command>,
     ) -> Self {
         theme::install(ctx);
         EidApp {
             host,
-            statuses,
+            events,
             commands,
             status: Status::NoReader,
+            readers: Vec::new(),
+            selected: None,
             photo: None,
             notice: None,
         }
     }
 
-    fn take_statuses(&mut self, ctx: &egui::Context) {
-        while let Ok(status) = self.statuses.try_recv() {
+    fn take_events(&mut self, ctx: &egui::Context) {
+        while let Ok(event) = self.events.try_recv() {
+            let status = match event {
+                Event::Readers(readers) => {
+                    self.readers = readers;
+                    continue;
+                }
+                Event::Status(status) => status,
+            };
             // The photo lives exactly as long as the card's data is on screen.
             self.photo = match &status {
                 Status::Ready { document, .. } => photo_texture(ctx, &document.photo),
@@ -112,11 +124,17 @@ impl EidApp {
         self.commands.send(Command::Reread).ok();
     }
 
-    /// Wide: title and actions on one row. Narrow: the title alone, the actions on a row below it.
+    /// Wide: title and actions on one row. Narrow: the title alone, then the reader picker, then the
+    /// actions.
     fn header(&mut self, ui: &mut Ui, t: Tokens, narrow: bool) {
         if narrow {
             ui.horizontal(|ui| title(ui, t, false));
             ui.add_space(2.0);
+            if self.readers.len() > 1 {
+                let width = ui.available_width();
+                self.reader_picker(ui, t, width);
+                ui.add_space(2.0);
+            }
         }
         ui.horizontal(|ui| {
             ui.set_min_height(36.0);
@@ -174,6 +192,9 @@ impl EidApp {
         {
             self.reread();
         }
+        if shortcuts {
+            self.reader_picker(ui, t, 220.0);
+        }
         // With no reader at all, the empty state offers pairing instead.
         let pair = self.host.can_pair_reader() && !matches!(self.status, Status::NoReader);
         if pair
@@ -183,6 +204,48 @@ impl EidApp {
                 .clicked()
         {
             self.host.pair_reader();
+        }
+    }
+
+    /// Which reader to read from, once there is more than one to choose.
+    fn reader_picker(&mut self, ui: &mut Ui, t: Tokens, width: f32) {
+        if self.readers.len() < 2 {
+            return;
+        }
+        let shown = match &self.selected {
+            None => "Automatski".to_owned(),
+            Some(name) if self.readers.iter().any(|r| &r.name == name) => name.clone(),
+            Some(name) => format!("{name} (nije priključen)"),
+        };
+        let mut choice = self.selected.clone();
+        egui::ComboBox::from_id_salt("reader")
+            .selected_text(RichText::new(shown))
+            .truncate()
+            .width(width)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut choice, None, "Automatski")
+                    .on_hover_text("Prvi čitač u kome je kartica");
+                for reader in &self.readers {
+                    let card = if reader.has_card {
+                        "kartica je u čitaču"
+                    } else {
+                        "prazan"
+                    };
+                    let label = RichText::new(format!("{} · {card}", reader.name));
+                    let label = if reader.has_card {
+                        label
+                    } else {
+                        label.color(t.muted)
+                    };
+                    ui.selectable_value(&mut choice, Some(reader.name.clone()), label);
+                }
+            })
+            .response
+            .on_hover_text("Čitač iz koga se čita kartica");
+        if choice != self.selected {
+            self.selected = choice.clone();
+            // The watcher only stops when the app closes, so a send cannot fail while the UI is up.
+            self.commands.send(Command::Select(choice)).ok();
         }
     }
 
@@ -277,7 +340,7 @@ impl EidApp {
 impl eframe::App for EidApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        self.take_statuses(&ctx);
+        self.take_events(&ctx);
         let now = ui.input(|i| i.time);
         if ui.input_mut(|i| i.consume_shortcut(&SAVE)) {
             self.save_pdf(now);
@@ -572,6 +635,10 @@ fn describe(error: &Error, reading: bool) -> (&'static str, &'static str) {
         Error::UnknownCard(_) => (
             "Kartica nije prepoznata",
             "Ovo nije srpska lična karta, ili ovaj tip kartice još nije podržan.",
+        ),
+        Error::NotAllowed(_) => (
+            "Pregledač ne dozvoljava pristup čitaču",
+            "Pregledači ne puštaju veb stranice do čitača kartica. Koristite desktop aplikaciju.",
         ),
         _ if reading => (
             "Čitanje kartice nije uspelo",

@@ -1,12 +1,13 @@
 //! `eid` — wait for a card, read it and print it. Uses the same reader watcher as the GUI.
 //!
-//! Usage: `eid [--pdf out.pdf] [--photo out.jpg]`
+//! Usage: `eid [--reader NAME] [--pdf out.pdf] [--photo out.jpg]`. Without `--reader` it reads the
+//! first reader that holds a card.
 
 use std::process::ExitCode;
 
 use std::sync::mpsc;
 
-use eid_core::Status;
+use eid_core::{Command, Event, Status};
 use eid_pcsc::Pcsc;
 
 fn main() -> ExitCode {
@@ -20,18 +21,23 @@ fn main() -> ExitCode {
 }
 
 fn read() -> Result<(), String> {
-    let (mut pdf_path, mut photo_path) = (None, None);
+    let (mut pdf_path, mut photo_path, mut reader) = (None, None, None);
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         match (flag.as_str(), args.next()) {
             ("--pdf", Some(path)) => pdf_path = Some(path),
             ("--photo", Some(path)) => photo_path = Some(path),
-            _ => return Err("usage: eid [--pdf out.pdf] [--photo out.jpg]".into()),
+            ("--reader", Some(name)) => reader = Some(name),
+            _ => return Err("usage: eid [--reader NAME] [--pdf out.pdf] [--photo out.jpg]".into()),
         }
     }
 
     let (status_tx, statuses) = mpsc::channel();
     let (commands, command_rx) = mpsc::channel();
+    // Sent before the watcher starts, so it never reads another reader first.
+    commands
+        .send(Command::Select(reader.clone()))
+        .map_err(|_| "the reader watcher stopped")?;
     // The watcher stops once `commands` is dropped at the end of this function.
     std::thread::spawn(move || {
         pollster::block_on(eid_core::run(Pcsc::new(), command_rx, |s| {
@@ -40,11 +46,23 @@ fn read() -> Result<(), String> {
     });
     let doc = loop {
         match statuses.recv().map_err(|_| "the reader watcher stopped")? {
-            Status::NoReader => eprintln!("Waiting for a card reader…"),
-            Status::NoCard { reader } => eprintln!("{reader}: waiting for a card…"),
-            Status::Reading { reader } => eprintln!("{reader}: reading…"),
-            Status::Ready { document, .. } => break document,
-            Status::Failed { error, .. } => return Err(error.to_string()),
+            Event::Readers(readers) => {
+                let names: Vec<_> = readers.iter().map(|r| r.name.as_str()).collect();
+                if let Some(wanted) = &reader
+                    && !names.contains(&wanted.as_str())
+                {
+                    return Err(format!(
+                        "no reader named \"{wanted}\"; readers: {}",
+                        names.join(", ")
+                    ));
+                }
+                eprintln!("Readers: {}", names.join(", "));
+            }
+            Event::Status(Status::NoReader) => eprintln!("Waiting for a card reader…"),
+            Event::Status(Status::NoCard { reader }) => eprintln!("{reader}: waiting for a card…"),
+            Event::Status(Status::Reading { reader }) => eprintln!("{reader}: reading…"),
+            Event::Status(Status::Ready { document, .. }) => break document,
+            Event::Status(Status::Failed { error, .. }) => return Err(error.to_string()),
         }
     };
     drop(commands);

@@ -8,7 +8,8 @@
 use std::sync::{Arc, mpsc};
 
 use egui_kittest::Harness;
-use eid_core::{DocumentKind, EidDocument, Error, Status};
+use egui_kittest::kittest::Queryable;
+use eid_core::{DocumentKind, EidDocument, Error, Event, Reader, Status};
 use eid_ui::{EidApp, Host};
 
 /// `pairing` stands in for the browser, where readers are granted one by one.
@@ -120,13 +121,44 @@ fn main() {
         (
             "unknown-card",
             Status::Failed {
-                reader: Some(reader),
+                reader: Some(reader.clone()),
                 error: Error::UnknownCard("3B00".into()),
             },
             false,
         ),
     ];
-    for (name, status, pairing) in states {
+    let one = vec![Reader {
+        name: reader.clone(),
+        has_card: true,
+    }];
+    let two = vec![
+        Reader {
+            name: reader.clone(),
+            has_card: true,
+        },
+        Reader {
+            name: "Gemplus USB SmartCard Reader".into(),
+            has_card: false,
+        },
+    ];
+    let ready = Status::Ready {
+        reader: reader.clone(),
+        document: Arc::new(sample()),
+    };
+    let mut scenes: Vec<(&str, Status, bool, Vec<Reader>, bool)> = states
+        .into_iter()
+        .map(|(name, status, pairing)| {
+            let readers = if matches!(status, Status::NoReader) {
+                vec![]
+            } else {
+                one.clone()
+            };
+            (name, status, pairing, readers, false)
+        })
+        .collect();
+    scenes.push(("two-readers", ready.clone(), false, two.clone(), false));
+    scenes.push(("two-readers-open", ready, false, two, true));
+    for (name, status, pairing, readers, open_picker) in scenes {
         for (theme, suffix, size) in [
             (egui::Theme::Light, "", [960.0, 820.0]),
             (egui::Theme::Dark, "-dark", [960.0, 820.0]),
@@ -135,13 +167,18 @@ fn main() {
         ] {
             let (tx, rx) = mpsc::channel();
             let (commands, _keep) = mpsc::channel();
-            tx.send(status.clone()).expect("send");
+            tx.send(Event::Readers(readers.clone())).expect("send");
+            tx.send(Event::Status(status.clone())).expect("send");
             let mut harness = Harness::builder()
                 .with_size(size)
                 .with_theme(theme)
                 .wgpu()
                 .build_eframe(|cc| EidApp::new(&cc.egui_ctx, Box::new(NoHost { pairing }), rx, commands));
             harness.run_steps(4);
+            if open_picker {
+                harness.get_by_label("Čitač iz koga se čita kartica").click();
+                harness.run_steps(2);
+            }
             let image = harness.render().expect("render");
             image.save(out.join(format!("{name}{suffix}.png"))).expect("save");
         }
