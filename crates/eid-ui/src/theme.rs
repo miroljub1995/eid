@@ -41,7 +41,8 @@ const DARK: Tokens = Tokens {
     border: Color32::from_rgb(0x33, 0x38, 0x40),
     text: Color32::from_rgb(0xE8, 0xEA, 0xED),
     muted: Color32::from_rgb(0x9A, 0xA1, 0xAB),
-    accent: Color32::from_rgb(0x4C, 0x8D, 0xE0),
+    // Dark enough for white button text (4.8:1), light enough to read on `bg` as an outline.
+    accent: Color32::from_rgb(0x35, 0x72, 0xC8),
     on_accent: Color32::WHITE,
     ok: Color32::from_rgb(0x4C, 0xC2, 0x8A),
     warn: Color32::from_rgb(0xE5, 0xA5, 0x3C),

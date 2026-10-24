@@ -11,11 +11,18 @@ use egui_kittest::Harness;
 use eid_core::{DocumentKind, EidDocument, Error, Status};
 use eid_ui::{EidApp, Host};
 
-struct NoHost;
+/// `pairing` stands in for the browser, where readers are granted one by one.
+struct NoHost {
+    pairing: bool,
+}
 
 impl Host for NoHost {
     fn save_file(&self, _: &str, _: Vec<u8>) -> Result<Option<String>, String> {
         Ok(None)
+    }
+
+    fn can_pair_reader(&self) -> bool {
+        self.pairing
     }
 }
 
@@ -62,19 +69,29 @@ fn main() {
     );
     std::fs::create_dir_all(&out).expect("output dir");
     let reader = "Generic EMV Smartcard Reader".to_owned();
+    let foreigner = EidDocument {
+        kind: DocumentKind::ForeignerIdCard,
+        surname: "VAN DER BERG-SCHMIDT".into(),
+        given_name: "ALEXANDRA MARIA".into(),
+        expiry_date: "01012020".into(),
+        ..sample()
+    };
     let states = [
-        ("no-reader", Status::NoReader),
+        ("no-reader", Status::NoReader, false),
+        ("no-reader-pair", Status::NoReader, true),
         (
             "no-card",
             Status::NoCard {
                 reader: reader.clone(),
             },
+            true,
         ),
         (
             "reading",
             Status::Reading {
                 reader: reader.clone(),
             },
+            false,
         ),
         (
             "ready",
@@ -82,6 +99,15 @@ fn main() {
                 reader: reader.clone(),
                 document: Arc::new(sample()),
             },
+            false,
+        ),
+        (
+            "foreigner-expired",
+            Status::Ready {
+                reader: reader.clone(),
+                document: Arc::new(foreigner),
+            },
+            false,
         ),
         (
             "failed",
@@ -89,6 +115,7 @@ fn main() {
                 reader: Some(reader.clone()),
                 error: Error::Transport("Card was removed".into()),
             },
+            false,
         ),
         (
             "unknown-card",
@@ -96,13 +123,15 @@ fn main() {
                 reader: Some(reader),
                 error: Error::UnknownCard("3B00".into()),
             },
+            false,
         ),
     ];
-    for (name, status) in states {
+    for (name, status, pairing) in states {
         for (theme, suffix, size) in [
             (egui::Theme::Light, "", [960.0, 820.0]),
             (egui::Theme::Dark, "-dark", [960.0, 820.0]),
             (egui::Theme::Light, "-narrow", [420.0, 760.0]),
+            (egui::Theme::Dark, "-narrow-dark", [420.0, 760.0]),
         ] {
             let (tx, rx) = mpsc::channel();
             let (commands, _keep) = mpsc::channel();
@@ -111,7 +140,7 @@ fn main() {
                 .with_size(size)
                 .with_theme(theme)
                 .wgpu()
-                .build_eframe(|cc| EidApp::new(&cc.egui_ctx, Box::new(NoHost), rx, commands));
+                .build_eframe(|cc| EidApp::new(&cc.egui_ctx, Box::new(NoHost { pairing }), rx, commands));
             harness.run_steps(4);
             let image = harness.render().expect("render");
             image.save(out.join(format!("{name}{suffix}.png"))).expect("save");

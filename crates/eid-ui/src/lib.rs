@@ -47,6 +47,9 @@ struct Notice {
 
 /// Wide enough for "Mesto rođenja, opština i država", so both sections' values line up.
 const LABEL_WIDTH: f32 = 230.0;
+/// Below this width the layout stacks: header actions under the title, photo above the name,
+/// labels above their values.
+const NARROW: f32 = 640.0;
 const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
 const REREAD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
 
@@ -109,51 +112,78 @@ impl EidApp {
         self.commands.send(Command::Reread).ok();
     }
 
-    fn header(&mut self, ui: &mut Ui, t: Tokens) {
+    /// Wide: title and actions on one row. Narrow: the title alone, the actions on a row below it.
+    fn header(&mut self, ui: &mut Ui, t: Tokens, narrow: bool) {
+        if narrow {
+            ui.horizontal(|ui| title(ui, t, false));
+            ui.add_space(2.0);
+        }
+        ui.horizontal(|ui| {
+            ui.set_min_height(36.0);
+            if !narrow {
+                title(ui, t, true);
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                self.actions(ui, t, !narrow)
+            });
+        });
+    }
+
+    /// Laid out right to left, so the primary action comes first.
+    fn actions(&mut self, ui: &mut Ui, t: Tokens, shortcuts: bool) {
         let now = ui.input(|i| i.time);
+        let has_document = self.document().is_some();
         let has_card = matches!(
             self.status,
             Status::Ready { .. } | Status::Failed { reader: Some(_), .. }
         );
-        ui.horizontal(|ui| {
-            ui.set_min_height(36.0);
-            card_icon(ui, 26.0, t.accent);
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                ui.label(
-                    RichText::new("Čitač elektronske lične karte")
-                        .family(bold())
-                        .size(16.0),
-                );
-                ui.label(
-                    RichText::new("Prikaz i štampa podataka sa čipa")
-                        .small()
-                        .color(t.muted),
-                );
-            });
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let save = Button::new(RichText::new("Sačuvaj PDF").color(t.on_accent))
-                    .fill(t.accent)
-                    .stroke(Stroke::NONE)
-                    .shortcut_text(
-                        RichText::new(ui.ctx().format_shortcut(&SAVE)).color(t.on_accent.gamma_multiply(0.7)),
-                    );
-                if ui
-                    .add_enabled(self.document().is_some(), save)
-                    .on_hover_text("Sačuvaj podatke kao PDF, u obliku zvaničnog izveštaja")
-                    .clicked()
-                {
-                    self.save_pdf(now);
-                }
-                let reread = Button::new("Učitaj ponovo").shortcut_text(ui.ctx().format_shortcut(&REREAD));
-                if ui.add_enabled(has_card, reread).clicked() {
-                    self.reread();
-                }
-                if self.host.can_pair_reader() && ui.button("Poveži čitač").clicked() {
-                    self.host.pair_reader();
-                }
-            });
-        });
+        let save_keys = ui.ctx().format_shortcut(&SAVE);
+        let mut save = if has_document {
+            primary_button(t, "Sačuvaj PDF")
+        } else {
+            Button::new("Sačuvaj PDF")
+        };
+        if shortcuts {
+            let color = if has_document {
+                t.on_accent.gamma_multiply(0.75)
+            } else {
+                t.muted
+            };
+            save = save.shortcut_text(RichText::new(&save_keys).color(color));
+        }
+        if ui
+            .add_enabled(has_document, save)
+            .on_hover_text(format!(
+                "Sačuvaj podatke kao PDF, u obliku zvaničnog izveštaja ({save_keys})"
+            ))
+            .on_disabled_hover_text("Dostupno kada se kartica učita")
+            .clicked()
+        {
+            self.save_pdf(now);
+        }
+        let reread_keys = ui.ctx().format_shortcut(&REREAD);
+        let mut reread = Button::new("Učitaj ponovo");
+        if shortcuts {
+            reread = reread.shortcut_text(RichText::new(&reread_keys).color(t.muted));
+        }
+        if ui
+            .add_enabled(has_card, reread)
+            .on_hover_text(format!("Ponovo pročitaj karticu iz čitača ({reread_keys})"))
+            .on_disabled_hover_text("Dostupno kada je kartica u čitaču")
+            .clicked()
+        {
+            self.reread();
+        }
+        // With no reader at all, the empty state offers pairing instead.
+        let pair = self.host.can_pair_reader() && !matches!(self.status, Status::NoReader);
+        if pair
+            && ui
+                .button("Poveži čitač")
+                .on_hover_text("Dozvoli pregledaču pristup još jednom USB čitaču")
+                .clicked()
+        {
+            self.host.pair_reader();
+        }
     }
 
     fn status_bar(&mut self, ui: &mut Ui, t: Tokens) {
@@ -169,9 +199,11 @@ impl EidApp {
             ),
         };
         ui.horizontal(|ui| {
-            let (dot, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
+            ui.spacing_mut().item_spacing.x = 8.0;
+            let (dot, response) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
             ui.painter().circle_filled(dot.center(), 4.0, color);
-            ui.label(RichText::new(text).small().color(t.muted));
+            response.on_hover_text("Stanje čitača");
+            ui.add(egui::Label::new(RichText::new(text).small().color(t.muted)).truncate());
             if let Some(notice) = self.notice.as_ref().filter(|n| n.until > now) {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let color = if notice.error { t.danger } else { t.ok };
@@ -183,23 +215,31 @@ impl EidApp {
         });
     }
 
-    fn body(&mut self, ui: &mut Ui, t: Tokens) {
+    fn body(&mut self, ui: &mut Ui, t: Tokens, narrow: bool) {
         match &self.status {
             Status::Ready { document, .. } => {
                 let document = Arc::clone(document);
                 egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
                     centered_column(ui, 860.0, |ui| {
-                        document_view(ui, t, &document, self.photo.as_ref())
+                        document_view(ui, t, &document, self.photo.as_ref(), narrow)
                     });
                 });
             }
             Status::Reading { .. } => {
                 let hint = "Ne vadite karticu iz čitača.";
-                empty_state(ui, t, Art::Spinner, "Čitanje kartice…", hint, None);
+                empty_state(ui, t, Art::Spinner, "Čitanje kartice…", hint, None, None);
             }
             Status::NoCard { .. } => {
                 let hint = "Stavite karticu u čitač, čipom napred. Podaci će se prikazati automatski.";
-                empty_state(ui, t, Art::Card(t.accent), "Ubacite ličnu kartu", hint, None);
+                empty_state(
+                    ui,
+                    t,
+                    Art::Card(t.accent),
+                    "Ubacite ličnu kartu",
+                    hint,
+                    None,
+                    None,
+                );
             }
             Status::NoReader => {
                 let pair = self.host.can_pair_reader();
@@ -209,14 +249,24 @@ impl EidApp {
                     "Priključite čitač kartica na računar."
                 };
                 let action = pair.then_some("Poveži čitač");
-                if empty_state(ui, t, Art::Card(t.muted), "Čitač nije pronađen", hint, action) {
+                if empty_state(
+                    ui,
+                    t,
+                    Art::Card(t.muted),
+                    "Čitač nije pronađen",
+                    hint,
+                    None,
+                    action,
+                ) {
                     self.host.pair_reader();
                 }
             }
             Status::Failed { reader, error } => {
                 let (title, hint) = describe(error, reader.is_some());
+                // The technical cause is for support, so it sits apart from the advice.
+                let detail = (!matches!(error, Error::UnknownCard(_))).then(|| format!("Detalji: {error}"));
                 let action = reader.is_some().then_some("Pokušaj ponovo");
-                if empty_state(ui, t, Art::Card(t.danger), title, &hint, action) {
+                if empty_state(ui, t, Art::Card(t.danger), title, hint, detail.as_deref(), action) {
                     self.reread();
                 }
             }
@@ -237,6 +287,7 @@ impl eframe::App for EidApp {
         }
 
         let t = Tokens::of(ui);
+        let narrow = ui.available_width() < NARROW;
         let bar = |m: Margin| {
             Frame::new()
                 .fill(t.surface)
@@ -244,79 +295,37 @@ impl eframe::App for EidApp {
                 .stroke(Stroke::new(1.0, t.border))
         };
         egui::Panel::top("header")
-            .frame(bar(Margin::symmetric(20, 10)))
-            .show(ui, |ui| self.header(ui, t));
+            .frame(bar(Margin::symmetric(gutter(narrow), 10)))
+            .show(ui, |ui| self.header(ui, t, narrow));
         egui::Panel::bottom("status")
-            .frame(bar(Margin::symmetric(20, 6)))
+            .frame(bar(Margin::symmetric(gutter(narrow), 6)))
             .show(ui, |ui| self.status_bar(ui, t));
         egui::CentralPanel::no_frame()
             .frame(Frame::new().fill(t.bg))
-            .show(ui, |ui| self.body(ui, t));
+            .show(ui, |ui| self.body(ui, t, narrow));
     }
 }
 
-fn document_view(ui: &mut Ui, t: Tokens, doc: &EidDocument, photo: Option<&TextureHandle>) {
-    ui.add_space(24.0);
-    surface(t).show(ui, |ui| {
+fn document_view(ui: &mut Ui, t: Tokens, doc: &EidDocument, photo: Option<&TextureHandle>, narrow: bool) {
+    ui.add_space(if narrow { 16.0 } else { 24.0 });
+    surface(t, narrow).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal_top(|ui| {
-            let size = vec2(132.0, 176.0);
-            match photo {
-                Some(texture) => {
-                    ui.add(egui::Image::new(texture).fit_to_exact_size(size).corner_radius(8));
-                }
-                None => {
-                    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-                    ui.painter().rect_filled(rect, 8, t.bg);
-                }
-            }
-            ui.add_space(12.0);
-            ui.vertical(|ui| {
-                ui.add_space(4.0);
-                let kind = match doc.kind {
-                    DocumentKind::IdCard => "Lična karta",
-                    DocumentKind::ForeignerIdCard => "Lična karta za strance",
-                    DocumentKind::ResidencePermit => "Dozvola za privremeni boravak i rad",
-                };
-                ui.label(RichText::new(kind.to_uppercase()).small().color(t.muted));
-                let name = format!("{} {}", doc.given_name, doc.surname);
-                ui.add(egui::Label::new(RichText::new(name).heading()).wrap());
-                let latin = doc.display_name();
-                if !latin.is_empty() && latin != format!("{} {}", doc.given_name, doc.surname) {
-                    ui.label(RichText::new(latin).color(t.muted));
-                }
-                ui.add_space(10.0);
-                ui.horizontal_wrapped(|ui| {
-                    if !doc.personal_number.is_empty() {
-                        chip(ui, t, &format!("JMBG {}", doc.personal_number), t.muted);
-                    }
-                    if !doc.doc_reg_no.is_empty() {
-                        chip(ui, t, &format!("Br. dokumenta {}", doc.doc_reg_no), t.muted);
-                    }
-                    match NaiveDate::parse_from_str(&doc.expiry_date, "%d%m%Y") {
-                        Ok(expiry) if expiry < Local::now().date_naive() => chip(
-                            ui,
-                            t,
-                            &format!("Istekla {}", eid_core::format_date(&doc.expiry_date)),
-                            t.danger,
-                        ),
-                        Ok(_) => chip(
-                            ui,
-                            t,
-                            &format!("Važi do {}", eid_core::format_date(&doc.expiry_date)),
-                            t.ok,
-                        ),
-                        Err(_) => {}
-                    }
-                });
-            });
+        let layout = if narrow {
+            Layout::top_down(Align::Min)
+        } else {
+            Layout::left_to_right(Align::Min)
+        };
+        ui.with_layout(layout, |ui| {
+            portrait(ui, t, photo);
+            ui.add_space(if narrow { 4.0 } else { 12.0 });
+            ui.vertical(|ui| holder(ui, t, doc));
         });
     });
 
     let report = doc.report();
     for section in &report.sections {
         ui.add_space(16.0);
-        surface(t).show(ui, |ui| {
+        surface(t, narrow).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(
                 RichText::new(section.title.to_uppercase())
@@ -325,45 +334,125 @@ fn document_view(ui: &mut Ui, t: Tokens, doc: &EidDocument, photo: Option<&Textu
                     .color(t.muted),
             );
             ui.add_space(6.0);
-            egui::Grid::new(section.title)
-                .num_columns(2)
-                .min_col_width(LABEL_WIDTH)
-                .spacing(vec2(24.0, 10.0))
-                .show(ui, |ui| {
-                    for row in &section.rows {
-                        ui.label(RichText::new(row.label).color(t.muted));
-                        let value = if row.value.is_empty() { "—" } else { &row.value };
-                        ui.add(egui::Label::new(RichText::new(value).size(15.0)).wrap());
-                        ui.end_row();
-                    }
-                });
+            if narrow {
+                stacked_rows(ui, t, &section.rows);
+            } else {
+                grid_rows(ui, t, section.title, &section.rows);
+            }
         });
     }
     ui.add_space(12.0);
-    ui.label(RichText::new(report.note).small().color(t.muted));
+    ui.add(egui::Label::new(RichText::new(report.note).small().color(t.muted)).wrap());
     ui.add_space(24.0);
 }
 
-fn surface(t: Tokens) -> Frame {
+fn portrait(ui: &mut Ui, t: Tokens, photo: Option<&TextureHandle>) {
+    let size = vec2(132.0, 176.0);
+    match photo {
+        Some(texture) => {
+            ui.add(egui::Image::new(texture).fit_to_exact_size(size).corner_radius(8))
+                .on_hover_text("Fotografija sa čipa");
+        }
+        None => {
+            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+            ui.painter().rect_filled(rect, 8, t.bg);
+        }
+    }
+}
+
+/// Document kind, name and the at-a-glance chips beside the portrait.
+fn holder(ui: &mut Ui, t: Tokens, doc: &EidDocument) {
+    ui.add_space(4.0);
+    let kind = match doc.kind {
+        DocumentKind::IdCard => "Lična karta",
+        DocumentKind::ForeignerIdCard => "Lična karta za strance",
+        DocumentKind::ResidencePermit => "Dozvola za privremeni boravak i rad",
+    };
+    ui.label(
+        RichText::new(kind.to_uppercase())
+            .small()
+            .family(bold())
+            .color(t.muted),
+    );
+    let name = format!("{} {}", doc.given_name, doc.surname);
+    let latin = doc.display_name();
+    let show_latin = !latin.is_empty() && latin != name;
+    ui.add(egui::Label::new(RichText::new(name).heading()).wrap());
+    if show_latin {
+        ui.label(RichText::new(latin).color(t.muted));
+    }
+    ui.add_space(10.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        if !doc.personal_number.is_empty() {
+            chip(ui, t, &format!("JMBG {}", doc.personal_number), t.muted);
+        }
+        if !doc.doc_reg_no.is_empty() {
+            chip(ui, t, &format!("Br. dokumenta {}", doc.doc_reg_no), t.muted);
+        }
+        let expiry = eid_core::format_date(&doc.expiry_date);
+        match NaiveDate::parse_from_str(&doc.expiry_date, "%d%m%Y") {
+            Ok(date) if date < Local::now().date_naive() => {
+                chip(ui, t, &format!("Istekla {expiry}"), t.danger);
+            }
+            Ok(_) => chip(ui, t, &format!("Važi do {expiry}"), t.ok),
+            Err(_) => {}
+        }
+    });
+}
+
+fn grid_rows(ui: &mut Ui, t: Tokens, id: &str, rows: &[eid_core::Row]) {
+    egui::Grid::new(id)
+        .num_columns(2)
+        .min_col_width(LABEL_WIDTH)
+        .spacing(vec2(24.0, 10.0))
+        .show(ui, |ui| {
+            for row in rows {
+                ui.label(RichText::new(row.label).color(t.muted));
+                value(ui, &row.value);
+                ui.end_row();
+            }
+        });
+}
+
+/// Label above value, for windows too narrow for two columns.
+fn stacked_rows(ui: &mut Ui, t: Tokens, rows: &[eid_core::Row]) {
+    for row in rows {
+        ui.add_space(4.0);
+        ui.spacing_mut().item_spacing.y = 2.0;
+        ui.label(RichText::new(row.label).small().color(t.muted));
+        value(ui, &row.value);
+        ui.add_space(6.0);
+    }
+}
+
+fn value(ui: &mut Ui, value: &str) {
+    let value = if value.is_empty() { "—" } else { value };
+    ui.add(egui::Label::new(RichText::new(value).size(15.0)).wrap());
+}
+
+fn surface(t: Tokens, narrow: bool) -> Frame {
     Frame::new()
         .fill(t.surface)
         .stroke(Stroke::new(1.0, t.border))
         .corner_radius(CornerRadius::same(12))
-        .inner_margin(Margin::same(20))
+        .inner_margin(Margin::same(if narrow { 16 } else { 20 }))
 }
 
+/// A pill that never wraps, so `horizontal_wrapped` moves it to the next line whole.
 fn chip(ui: &mut Ui, t: Tokens, text: &str, color: Color32) {
-    Frame::new()
-        .fill(color.gamma_multiply(0.12))
-        .corner_radius(CornerRadius::same(10))
-        .inner_margin(Margin::symmetric(10, 3))
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new(text)
-                    .small()
-                    .color(if color == t.muted { t.text } else { color }),
-            )
-        });
+    let text_color = if color == t.muted { t.text } else { color };
+    let galley = egui::WidgetText::from(RichText::new(text).small().color(text_color)).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Small,
+    );
+    let pad = vec2(10.0, 3.0);
+    let (rect, response) = ui.allocate_exact_size(galley.size() + 2.0 * pad, Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
+    ui.painter().rect_filled(rect, 10, color.gamma_multiply(0.12));
+    ui.painter().galley(rect.min + pad, galley, text_color);
 }
 
 fn centered_column(ui: &mut Ui, max_width: f32, add: impl FnOnce(&mut Ui)) {
@@ -384,7 +473,15 @@ enum Art {
 }
 
 /// A centred message; returns whether its action button was clicked.
-fn empty_state(ui: &mut Ui, t: Tokens, art: Art, title: &str, hint: &str, action: Option<&str>) -> bool {
+fn empty_state(
+    ui: &mut Ui,
+    t: Tokens,
+    art: Art,
+    title: &str,
+    hint: &str,
+    detail: Option<&str>,
+    action: Option<&str>,
+) -> bool {
     let mut clicked = false;
     ui.vertical_centered(|ui| {
         ui.add_space((ui.available_height() / 2.0 - 120.0).max(24.0));
@@ -394,18 +491,53 @@ fn empty_state(ui: &mut Ui, t: Tokens, art: Art, title: &str, hint: &str, action
                 ui.add(egui::Spinner::new().size(48.0).color(t.accent));
             }
         }
-        ui.add_space(12.0);
-        ui.label(RichText::new(title).heading());
-        ui.add(egui::Label::new(RichText::new(hint).color(t.muted)).wrap());
-        if let Some(action) = action {
-            ui.add_space(8.0);
-            let button = Button::new(RichText::new(action).color(t.on_accent))
-                .fill(t.accent)
-                .stroke(Stroke::NONE);
-            clicked = ui.add(button).clicked();
-        }
+        ui.add_space(16.0);
+        centered_column(ui, 440.0, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add(egui::Label::new(RichText::new(title).heading()).wrap());
+                ui.add(egui::Label::new(RichText::new(hint).color(t.muted)).wrap());
+                if let Some(detail) = detail {
+                    ui.add(egui::Label::new(RichText::new(detail).small().color(t.muted)).wrap());
+                }
+                if let Some(action) = action {
+                    ui.add_space(8.0);
+                    clicked = ui.add(primary_button(t, action)).clicked();
+                }
+            });
+        });
     });
     clicked
+}
+
+fn primary_button(t: Tokens, text: &str) -> Button<'static> {
+    Button::new(RichText::new(text).color(t.on_accent))
+        .fill(t.accent)
+        .stroke(Stroke::NONE)
+}
+
+/// The app's name beside its mark; `subtitle` only when there is room for it.
+fn title(ui: &mut Ui, t: Tokens, subtitle: bool) {
+    card_icon(ui, 26.0, t.accent);
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        ui.label(
+            RichText::new("Čitač elektronske lične karte")
+                .family(bold())
+                .size(16.0),
+        );
+        if subtitle {
+            ui.label(
+                RichText::new("Prikaz i štampa podataka sa čipa")
+                    .small()
+                    .color(t.muted),
+            );
+        }
+    });
+}
+
+/// Side margin of the header and status bar, matching the content column's.
+fn gutter(narrow: bool) -> i8 {
+    if narrow { 16 } else { 20 }
 }
 
 /// An ID card with a chip, drawn so the app ships no image assets.
@@ -435,20 +567,17 @@ fn card_icon(ui: &mut Ui, width: f32, color: Color32) {
     }
 }
 
-fn describe(error: &Error, reading: bool) -> (&'static str, String) {
+fn describe(error: &Error, reading: bool) -> (&'static str, &'static str) {
     match error {
         Error::UnknownCard(_) => (
             "Kartica nije prepoznata",
-            "Ovo nije srpska lična karta, ili je ovaj tip kartice još nepodržan.".into(),
+            "Ovo nije srpska lična karta, ili ovaj tip kartice još nije podržan.",
         ),
         _ if reading => (
             "Čitanje kartice nije uspelo",
-            format!("Izvadite karticu i ubacite je ponovo. ({error})"),
+            "Izvadite karticu i ubacite je ponovo.",
         ),
-        _ => (
-            "Čitač nije dostupan",
-            format!("Proverite da li je čitač priključen. ({error})"),
-        ),
+        _ => ("Čitač nije dostupan", "Proverite da li je čitač priključen."),
     }
 }
 
