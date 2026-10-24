@@ -51,7 +51,9 @@ impl Pcsc {
                 let event = state.event_state();
                 Reader {
                     name: state.name().to_string_lossy().into_owned(),
-                    has_card: event.contains(State::PRESENT) && !event.contains(State::MUTE),
+                    // A mute card (in the wrong way round, dirty contacts) still counts: reading it
+                    // fails with advice to re-insert it, rather than claiming the reader is empty.
+                    has_card: event.contains(State::PRESENT),
                 }
             })
             .collect())

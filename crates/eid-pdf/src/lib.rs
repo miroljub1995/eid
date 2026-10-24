@@ -5,9 +5,9 @@
 //! points, and so is this one: with the same numbers in the same coordinate system, a rasteriser rounds
 //! every edge the same way and the two prints match pixel for pixel.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::sync::OnceLock;
 
 use krilla::Document;
 use krilla::geom::{PathBuilder, Point, Rect, Size, Transform};
@@ -99,11 +99,15 @@ pub fn file_name(doc: &EidDocument) -> String {
 
 /// Renders the print-out. `printed_on` is the date shown as "Datum štampe", e.g. `"05.01.2026."`.
 pub fn render(doc: &EidDocument, printed_on: &str) -> Result<Vec<u8>, String> {
-    let font_data = system_arial().map_or(Cow::Borrowed(FONT_REGULAR), Cow::Owned);
-    let charmap = FontRef::new(&font_data)
+    static SYSTEM_ARIAL: OnceLock<Option<Vec<u8>>> = OnceLock::new();
+    let font_data = SYSTEM_ARIAL
+        .get_or_init(system_arial)
+        .as_deref()
+        .unwrap_or(FONT_REGULAR);
+    let charmap = FontRef::new(font_data)
         .map_err(|e| format!("the font: {e}"))?
         .charmap();
-    let font = Font::new(font_data.to_vec().into(), 0).ok_or("the font is unreadable")?;
+    let font = Font::new(font_data.into(), 0).ok_or("the font is unreadable")?;
     let advances = Advances::new()?;
     let report = doc.report();
 

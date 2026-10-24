@@ -78,6 +78,13 @@ impl EidApp {
                 }
                 Event::Status(status) => status,
             };
+            // Sent before the watcher saw the latest selection: it belongs to the reader shown before.
+            let picked = eid_core::pick(&self.readers, self.selected.as_deref());
+            if let (Some(reader), Some(picked)) = (status_reader(&status), picked)
+                && reader != picked.name
+            {
+                continue;
+            }
             // The photo lives exactly as long as the card's data is on screen.
             self.photo = match &status {
                 Status::Ready { document, .. } => photo_texture(ctx, &document.photo),
@@ -694,6 +701,16 @@ mod tests {
 
         app.selected = Some("B".into());
         app.show_switch();
+        assert!(matches!(&app.status, Status::Reading { reader } if reader == "B"));
+        // A's card, read before the watcher saw the switch, must not come back under B.
+        let (events, rx) = std::sync::mpsc::channel();
+        app.events = rx;
+        let stale = Status::Ready {
+            reader: "A".into(),
+            document: Arc::default(),
+        };
+        events.send(Event::Status(stale)).unwrap();
+        app.take_events(&egui::Context::default());
         assert!(matches!(&app.status, Status::Reading { reader } if reader == "B"));
         app.selected = Some("C".into());
         app.show_switch();
