@@ -87,14 +87,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpcsclite-dev
-      - run: rustup toolchain install stable --profile minimal && rustup default stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release -p eid-viewer -p eid-cli
+      # In containers: a static musl CLI, and the app against glibc 2.35 with libpcsclite linked in.
+      - name: Build
+        run: packaging/linux/build.sh
       - name: Package
         run: |
           mkdir -p dist
-          tar -czf "dist/eid-linux-${{ matrix.arch }}.tar.gz" -C target/release eid-viewer eid
+          tar -czf "dist/eid-linux-${{ matrix.arch }}.tar.gz" -C target/linux-dist eid-viewer eid
       - uses: actions/upload-artifact@v4
         with:
           name: eid-linux-${{ matrix.arch }}

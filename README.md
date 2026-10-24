@@ -74,10 +74,15 @@ git tag v0.1.0 && git push origin v0.1.0
 |---|---|
 | `eid-macos-universal.zip` | `eID.app` and the `eid` CLI, Apple silicon and Intel |
 | `eid-windows-x64.zip` | `eid-viewer.exe` and `eid.exe` |
-| `eid-linux-x64.tar.gz`, `eid-linux-arm64.tar.gz` | `eid-viewer` and `eid`; need `pcscd` (`apt install pcscd`) |
+| `eid-linux-x64.tar.gz`, `eid-linux-arm64.tar.gz` | `eid` (static, any Linux) and `eid-viewer` (glibc 2.35+: Ubuntu 22.04, Debian 12, Fedora 36 or later); both need `pcscd` |
 | `eid-android.apk` | the Android app |
 | `eID-unsigned.ipa` | the iOS/iPadOS app, to be signed with your Apple identity before it installs |
 | `SHA256SUMS` | checksums of the above |
+
+On Linux the PC/SC client library is built in, from pcsc-lite 2.5.3 (`packaging/linux/pcsclite.sh`):
+from 2.4.1 on, the client negotiates the protocol down to any `pcscd` since 1.8.24 (2018). The app
+can't be fully static, because it loads the system's OpenGL and X11/Wayland libraries at run time.
+`packaging/linux/build.sh` makes both binaries locally the same way, in Docker.
 
 The macOS app is signed ad hoc, not notarised, so the first launch needs right-click › Open. The APK is
 signed with the repository's `ANDROID_KEYSTORE` / `ANDROID_KEYSTORE_PASSWORD` secrets (a base64

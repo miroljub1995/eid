@@ -36,3 +36,4 @@ todo = "warn"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
