@@ -1,14 +1,16 @@
-//! `eid` — read the card in the first reader that holds one and print it.
+//! `eid` — wait for a card, read it and print it. Uses the same reader watcher as the GUI.
 //!
 //! Usage: `eid [--pdf out.pdf] [--photo out.jpg]`
 
 use std::process::ExitCode;
 
-use eid_core::{Platform, read_eid};
+use std::sync::mpsc;
+
+use eid_core::Status;
 use eid_pcsc::Pcsc;
 
 fn main() -> ExitCode {
-    match pollster::block_on(read()) {
+    match read() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("eid: {error}");
@@ -17,7 +19,7 @@ fn main() -> ExitCode {
     }
 }
 
-async fn read() -> Result<(), String> {
+fn read() -> Result<(), String> {
     let (mut pdf_path, mut photo_path) = (None, None);
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -28,14 +30,24 @@ async fn read() -> Result<(), String> {
         }
     }
 
-    let mut pcsc = Pcsc::new();
-    let readers = pcsc.readers(0).await.map_err(|e| e.to_string())?;
-    let reader = readers
-        .iter()
-        .find(|r| r.has_card)
-        .ok_or("no card in any reader")?;
-    let mut card = pcsc.connect(&reader.name).await.map_err(|e| e.to_string())?;
-    let doc = read_eid(&mut card).await.map_err(|e| e.to_string())?;
+    let (status_tx, statuses) = mpsc::channel();
+    let (commands, command_rx) = mpsc::channel();
+    // The watcher stops once `commands` is dropped at the end of this function.
+    std::thread::spawn(move || {
+        pollster::block_on(eid_core::run(Pcsc::new(), command_rx, |s| {
+            status_tx.send(s).ok();
+        }))
+    });
+    let doc = loop {
+        match statuses.recv().map_err(|_| "the reader watcher stopped")? {
+            Status::NoReader => eprintln!("Waiting for a card reader…"),
+            Status::NoCard { reader } => eprintln!("{reader}: waiting for a card…"),
+            Status::Reading { reader } => eprintln!("{reader}: reading…"),
+            Status::Ready { document, .. } => break document,
+            Status::Failed { error, .. } => return Err(error.to_string()),
+        }
+    };
+    drop(commands);
 
     let report = doc.report();
     println!("{}", report.title.to_uppercase());
