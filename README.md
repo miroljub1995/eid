@@ -41,16 +41,18 @@ Install the signed `eID.app` from Xcode's Devices window. Saved PDFs go to the a
 Files app. The simulator can't reach USB readers, so test on a device.
 
 **Android.** Needs Android 8 or later, a phone or tablet with USB host (USB OTG) support, and a reader
-that exchanges whole APDUs (most current readers do). Building needs the Android SDK and NDK, and
-[cargo-apk](https://crates.io/crates/cargo-apk):
+that exchanges whole APDUs (most current readers do). The APK builds in Docker, with nothing to install
+but Docker:
 
 ```bash
-rustup target add aarch64-linux-android
+packaging/android/build.sh
 ```
 
-```bash
-ANDROID_HOME=… ANDROID_NDK_ROOT=… cargo apk build --release -p eid-android
-```
+The script builds an image with Rust, the Android SDK and NDK, and
+[cargo-apk](https://crates.io/crates/cargo-apk); building it accepts the Android SDK license. It then
+writes `target/apk/release/apk/eid.apk`. The image is amd64 because Google ships the NDK for x86_64
+Linux only; on Apple silicon it runs emulated, so the first build is slow. The APK is signed with a
+debug key: fine for installing with `adb install`, not for Google Play.
 
 When a reader is plugged in, Android asks once whether eID may use it. Saved PDFs go to
 `Android/data/rs.eid.viewer/files`; on Android 11 and later the Files app hides that folder, so copy
