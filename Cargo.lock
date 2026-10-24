@@ -960,6 +960,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "eid-ctk"
+version = "0.1.0"
+dependencies = [
+ "block2 0.6.2",
+ "eid-core",
+ "objc2 0.6.5",
+ "objc2-crypto-token-kit",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "eid-ios"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "eid-core",
+ "eid-ctk",
+ "eid-ui",
+ "pollster 0.4.0",
+]
+
+[[package]]
 name = "eid-pcsc"
 version = "0.1.0"
 dependencies = [
@@ -981,7 +1003,6 @@ name = "eid-ui"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "eframe",
  "egui",
  "egui_kittest",
  "eid-core",
@@ -2166,6 +2187,18 @@ dependencies = [
  "objc2 0.5.3",
  "objc2-contacts",
  "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "objc2-crypto-token-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b52ed1d020c7eb084aea70ec9b8779b745f507decaec13395de8ef4434a9da11"
+dependencies = [
+ "bitflags 2.13.2",
+ "block2 0.6.2",
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
 ]
 
 [[package]]

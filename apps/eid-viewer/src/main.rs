@@ -32,14 +32,22 @@ fn main() -> eframe::Result {
                         }
                     }));
                 })?;
-            Ok(Box::new(EidApp::new(
+            Ok(Box::new(Viewer(EidApp::new(
                 &cc.egui_ctx,
                 Box::new(Desktop),
                 status_rx,
                 command_tx,
-            )))
+            ))))
         }),
     )
+}
+
+struct Viewer(EidApp);
+
+impl eframe::App for Viewer {
+    fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
+        self.0.show(ui);
+    }
 }
 
 struct Desktop;

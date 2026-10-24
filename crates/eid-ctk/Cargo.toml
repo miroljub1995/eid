@@ -1,0 +1,28 @@
+[package]
+name = "eid-ctk"
+description = "Reaches card readers through Apple's CryptoTokenKit: iOS and iPadOS apps (USB-C readers), and macOS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Objective-C calls need `unsafe`, so this crate relaxes the workspace's `forbid` to `deny` and allows
+# it in its one module of glue; the other lints are the workspace's.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[dependencies]
+eid-core = { workspace = true }
+
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSData", "NSError", "NSString"] }
+objc2-crypto-token-kit = { version = "0.3", default-features = false, features = ["std", "block2", "TKSmartCard", "TKSmartCardATR"] }

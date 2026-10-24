@@ -159,7 +159,16 @@ fn main() {
                 .with_size(size)
                 .with_theme(theme)
                 .wgpu()
-                .build_eframe(|cc| EidApp::new(&cc.egui_ctx, Box::new(NoHost), rx, commands));
+                .build_ui_state(
+                    |ui, app: &mut Option<EidApp>| {
+                        if let Some(app) = app {
+                            app.show(ui);
+                        }
+                    },
+                    None,
+                );
+            // The app styles the harness's own context, so it is made once the harness exists.
+            *harness.state_mut() = Some(EidApp::new(&harness.ctx, Box::new(NoHost), rx, commands));
             harness.run_steps(4);
             if open_picker {
                 harness.get_by_label("Čitač iz koga se čita kartica").click();

@@ -6,7 +6,8 @@ print-out as the official "Čitač elektronske lične karte". A Rust port of
 types from [Baš Čelik](https://github.com/ubavic/bas-celik).
 
 One codebase, egui for the interface. The desktop app reads cards through the system smart card service
-(PC/SC) on macOS, Windows and Linux.
+(PC/SC) on macOS, Windows and Linux. The iOS/iPadOS app reads USB-C (or Lightning) readers through
+Apple's CryptoTokenKit.
 
 Supported cards: ID cards issued before 18 Aug 2014 (Apollo) and after (Gemalto and newer), ID cards for
 foreigners, and residence permits.
@@ -24,6 +25,20 @@ cargo run -p eid-cli -- --pdf lična-karta.pdf
 The CLI waits for a card, prints the data and can save the PDF (`--pdf`) and the photo (`--photo`).
 With several readers attached, `--reader NAME` picks one; the app has a reader picker in its header.
 
+**iPad / iPhone.** It needs iOS/iPadOS 16 or later. Building needs Xcode, an Apple development signing
+identity and a provisioning profile for your bundle id:
+
+```bash
+rustup target add aarch64-apple-ios
+```
+
+```bash
+BUNDLE_ID=rs.example.eid SIGN_IDENTITY="Apple Development: …" PROFILE=eid.mobileprovision apps/eid-ios/bundle.sh
+```
+
+Install the signed `eID.app` from Xcode's Devices window. Saved PDFs go to the app's folder in the
+Files app. The simulator can't reach USB readers, so test on a device.
+
 There is no browser build: browsers don't let web pages use smart card readers (Chrome counts them as a
 protected USB class).
 
@@ -34,10 +49,14 @@ crates/
   eid-core     protocol and data model: APDUs, file reading, TLV parsing, the official field order,
                and the SmartCard / Platform traits and the reader watcher (run). No I/O.
   eid-pcsc     Platform over PC/SC: macOS, Windows, Linux (pcsc-lite)
+  eid-ctk      Platform over CryptoTokenKit: iOS/iPadOS (and macOS). The one crate allowed `unsafe`,
+               for the Objective-C calls
   eid-pdf      the A4 print-out (krilla, pure Rust)
-  eid-ui       the egui interface; the platform comes in through the Host trait and a status channel
+  eid-ui       the egui interface (egui only; each app picks its own renderer); the platform comes in
+               through the Host trait and an event channel
 apps/
-  eid-viewer       desktop app (eframe + PC/SC)
+  eid-viewer       desktop app (eframe on OpenGL + PC/SC)
+  eid-ios          iOS/iPadOS app (eframe on Metal + CryptoTokenKit)
   eid-cli          terminal reader, also the quickest way to test a reader
 ```
 
@@ -76,7 +95,7 @@ To add a platform, implement the two traits in a new crate and start `run` from 
 |---|---|
 | macOS, Windows, Linux | `eid-pcsc` (done) |
 | Android | USB host API (CCID over bulk endpoints) through JNI; the CCID codec of the removed `eid-webusb` crate (commit 2b58b18) is a starting point |
-| iPadOS | CryptoTokenKit `TKSmartCard` with a USB-C reader |
+| iOS, iPadOS | `eid-ctk` (done; CryptoTokenKit, iOS 16+) |
 
 ## Development
 
@@ -96,7 +115,10 @@ The snapshot example renders every screen offscreen, in light, dark and narrow l
 holder. Use it to check UI changes without a card.
 
 Non-test code never panics on card data: the workspace lints warn on `unwrap`, `expect`, `panic` and
-indexing, and `unsafe` is forbidden.
+indexing, and `unsafe` is forbidden everywhere but `eid-ctk`'s Objective-C glue.
+
+To test the CryptoTokenKit backend on a Mac, sign the binary with the
+`com.apple.security.smartcard` entitlement; on macOS, CryptoTokenKit is only reachable with it.
 
 ## The PDF
 

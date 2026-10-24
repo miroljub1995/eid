@@ -328,8 +328,9 @@ impl EidApp {
     }
 }
 
-impl eframe::App for EidApp {
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+impl EidApp {
+    /// Draws the whole app into `ui`. Each app's shell (eframe on the desktop, ...) calls it every frame.
+    pub fn show(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         self.take_events(&ctx);
         let now = ui.input(|i| i.time);

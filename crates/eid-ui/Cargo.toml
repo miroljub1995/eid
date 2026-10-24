@@ -11,12 +11,11 @@ workspace = true
 [dependencies]
 eid-core = { workspace = true }
 eid-pdf = { workspace = true }
-eframe = { workspace = true }
 egui = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 # Renders the UI offscreen for the snapshot example (`cargo run -p eid-ui --example snapshot`).
-egui_kittest = { version = "0.37", features = ["wgpu", "snapshot", "eframe"] }
+egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

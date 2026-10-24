@@ -12,6 +12,7 @@ workspace = true
 eid-core = { workspace = true }
 eid-pcsc = { workspace = true }
 eid-ui = { workspace = true }
-eframe = { workspace = true, features = ["accesskit", "wayland", "x11"] }
+# glow (OpenGL) is plenty for this UI and lighter than wgpu.
+eframe = { workspace = true, features = ["glow", "accesskit", "wayland", "x11"] }
 pollster = { workspace = true }
 rfd = "0.17"
