@@ -1,0 +1,17 @@
+[package]
+name = "eid-viewer"
+description = "Serbian eID viewer for the desktop: macOS, Windows and Linux through PC/SC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+eid-core = { workspace = true }
+eid-pcsc = { workspace = true }
+eid-ui = { workspace = true }
+eframe = { workspace = true, features = ["accesskit", "wayland", "x11"] }
+pollster = { workspace = true }
+rfd = "0.17"

@@ -30,7 +30,10 @@ async fn read() -> Result<(), String> {
 
     let mut pcsc = Pcsc::new();
     let readers = pcsc.readers(0).await.map_err(|e| e.to_string())?;
-    let reader = readers.iter().find(|r| r.has_card).ok_or("no card in any reader")?;
+    let reader = readers
+        .iter()
+        .find(|r| r.has_card)
+        .ok_or("no card in any reader")?;
     let mut card = pcsc.connect(&reader.name).await.map_err(|e| e.to_string())?;
     let doc = read_eid(&mut card).await.map_err(|e| e.to_string())?;
 
