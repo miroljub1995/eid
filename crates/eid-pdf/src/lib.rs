@@ -28,7 +28,6 @@ use skrifa::{FontRef, MetadataProvider, OutlineGlyphCollection};
 /// Liberation Sans (SIL OFL 1.1): metric-compatible with Arial, so the layout is identical when the
 /// system has no Arial of its own. Covers Serbian Cyrillic and Latin.
 pub const FONT_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/LiberationSans-Regular.ttf");
-pub const FONT_BOLD: &[u8] = include_bytes!("../../../assets/fonts/LiberationSans-Bold.ttf");
 
 /// A4 as the official print declares it (595.32001 × 841.92004): rasterisers round these up, so the
 /// width is the nearest f32 above 595.32 and both prints get the same pixel grid at every resolution.

@@ -14,7 +14,7 @@ pub enum DocumentKind {
 }
 
 /// The holder's data as stored on the card: text exactly as read, dates as `DDMMYYYY`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct EidDocument {
     pub kind: DocumentKind,
 
@@ -82,7 +82,8 @@ const PERSONAL_TAGS: &[(u16, Field)] = &[
     (1566, |d| &mut d.date_of_birth),
     (1567, |d| &mut d.state_of_birth_code),
     (1583, |d| &mut d.nationality_full),
-    // Older residence permits keep the purpose of stay under 1582; 1683 wins when both are there.
+    // Older residence permits keep the purpose of stay under 1582; 1683 wins when both are there
+    // (see `parse`).
     (1582, |d| &mut d.purpose_of_stay),
     (1683, |d| &mut d.purpose_of_stay),
     (1684, |d| &mut d.e_note),
@@ -125,9 +126,10 @@ impl EidDocument {
                 let Some((_, field)) = tags.iter().find(|(t, _)| *t == tag) else {
                     continue;
                 };
-                if !value.is_empty() {
-                    *field(&mut doc) = decode(value);
+                if value.is_empty() || (tag == 1582 && !doc.purpose_of_stay.is_empty()) {
+                    continue;
                 }
+                *field(&mut doc) = decode(value);
             }
         }
         Ok(doc)
@@ -162,12 +164,16 @@ impl EidDocument {
             .iter()
             .flat_map(|part| part.split_whitespace())
             .map(|word| {
-                let word = to_latin(word).to_lowercase();
-                let mut chars = word.chars();
-                chars
-                    .next()
-                    .map(|first| first.to_uppercase().chain(chars).collect())
-                    .unwrap_or_default()
+                // Capitalise each part of a hyphenated name too: "Van Der Berg-Schmidt".
+                let mut out = String::new();
+                for (i, c) in to_latin(word).to_lowercase().chars().enumerate() {
+                    if i == 0 || out.ends_with('-') {
+                        out.extend(c.to_uppercase());
+                    } else {
+                        out.push(c);
+                    }
+                }
+                out
             })
             .collect::<Vec<String>>()
             .join(" ")
@@ -272,6 +278,15 @@ impl EidDocument {
             ],
             note,
         }
+    }
+}
+
+/// Only what identifies the document, so a stray `{:?}` never puts the holder's data in a log.
+impl std::fmt::Debug for EidDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EidDocument")
+            .field("kind", &self.kind)
+            .finish_non_exhaustive()
     }
 }
 
@@ -383,6 +398,13 @@ mod tests {
         assert_eq!(format_date("01010001"), "Nije dostupan");
         assert_eq!(format_date("bad"), "bad");
         assert_eq!(doc.display_name(), "Jovana Petrović");
+        let hyphenated = EidDocument {
+            given_name: "ANA".into(),
+            surname: "BERG-SCHMIDT".into(),
+            ..doc.clone()
+        };
+        assert_eq!(hyphenated.display_name(), "Ana Berg-Schmidt");
+        assert!(!format!("{doc:?}").contains("ПЕТРОВИЋ"));
         assert_eq!(to_latin("ЏАК Љиљана"), "DžAK Ljiljana");
     }
 
@@ -403,6 +425,14 @@ mod tests {
         ];
         let doc = EidDocument::parse(DocumentKind::IdCard, &[], &personal, &[], vec![]).unwrap();
         assert_eq!(doc.surname, "PERA");
+        // 1683 is preferred over 1582 in either order.
+        for personal in [
+            [0x93, 0x06, 0x01, 0x00, b'N', 0x2E, 0x06, 0x01, 0x00, b'O'],
+            [0x2E, 0x06, 0x01, 0x00, b'O', 0x93, 0x06, 0x01, 0x00, b'N'],
+        ] {
+            let doc = EidDocument::parse(DocumentKind::ResidencePermit, &[], &personal, &[], vec![]).unwrap();
+            assert_eq!(doc.purpose_of_stay, "N");
+        }
         assert_eq!(decode(&[0xC6]), "Æ");
     }
 

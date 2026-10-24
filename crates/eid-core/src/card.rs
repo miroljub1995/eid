@@ -80,15 +80,12 @@ async fn read_file(card: &mut impl SmartCard, path: &[u8], header_len: u8) -> Re
         });
     }
     let header = read_binary(card, 0, header_len).await?;
+    let (&[.., lo, hi], true) = (header.as_slice(), header.len() == usize::from(header_len)) else {
+        return Err(Error::Malformed("short file header"));
+    };
     // Apollo cards fill files that were never written with 0xFF.
     if header.iter().all(|&b| b == 0xFF) {
         return Ok(Vec::new());
-    }
-    let [.., lo, hi] = header[..] else {
-        return Err(Error::Malformed("short file header"));
-    };
-    if header.len() != usize::from(header_len) {
-        return Err(Error::Malformed("short file header"));
     }
     let len = usize::from(u16::from_le_bytes([lo, hi]));
 
@@ -127,7 +124,14 @@ async fn exchange(card: &mut impl SmartCard, command: &[u8]) -> Result<(Vec<u8>,
     let (data, mut sw) = apdu::split(&response)?;
     let mut data = data.to_vec();
 
+    // Only a command that ends in Le can be resent with another Le (a short case 2 or case 4 APDU).
+    let has_le = match command {
+        [_, _, _, _, _] => true,
+        [_, _, _, _, lc, rest @ ..] => rest.len() == usize::from(*lc) + 1,
+        _ => false,
+    };
     if sw >> 8 == 0x6C
+        && has_le
         && let [header @ .., _] = command
     {
         let mut resent = header.to_vec();
@@ -286,6 +290,16 @@ pub(crate) mod tests {
         assert!(matches!(
             pollster::block_on(read_eid(&mut card)),
             Err(Error::UnknownCard(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_an_empty_header() {
+        let mut card = sample_card();
+        card.files.insert(DOCUMENT_FILE, vec![]);
+        assert!(matches!(
+            pollster::block_on(read_eid(&mut card)),
+            Err(Error::Malformed(_))
         ));
     }
 

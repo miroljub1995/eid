@@ -31,9 +31,13 @@ cd apps/eid-viewer-web && trunk build --release
 ```
 
 The page is written to `target/web-dist`. Serve it over HTTPS or from localhost, open it, then click
-**Poveži čitač** and pick the reader. On macOS and Windows the operating system's smart card service
-usually holds the reader, so WebUSB can't claim it. The browser build is meant for Linux and ChromeOS,
-and for machines where that service is turned off. Elsewhere use the desktop app.
+**Poveži čitač** and pick the reader.
+
+Chrome treats smart card readers as a protected USB class: an ordinary web page may list a reader but
+not claim it. The app then says so plainly. The browser build works as an
+[Isolated Web App](https://github.com/WICG/isolated-web-apps), which can be granted the
+`usb-unrestricted` permission. It also needs a machine where the operating system's smart card
+service isn't holding the reader. Everywhere else, use the desktop app.
 
 ## Layout
 

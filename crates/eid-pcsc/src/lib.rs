@@ -70,9 +70,12 @@ impl Platform for Pcsc {
                 self.states.clear();
                 match error {
                     // No reader attached or the service is stopped: there is simply nothing to read yet.
+                    // A reader unplugged between listing and waiting is the same: it will just be gone.
                     pcsc::Error::NoService
                     | pcsc::Error::ServiceStopped
-                    | pcsc::Error::NoReadersAvailable => {
+                    | pcsc::Error::NoReadersAvailable
+                    | pcsc::Error::UnknownReader
+                    | pcsc::Error::ReaderUnavailable => {
                         std::thread::sleep(wait);
                         Ok(Vec::new())
                     }

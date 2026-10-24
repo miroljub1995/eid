@@ -192,6 +192,9 @@ impl Link {
             let Some(header) = Header::parse(&buffer) else {
                 continue;
             };
+            if header.total() > MAX_MESSAGE as usize {
+                return Err(Error::Transport("the reader sent a malformed reply".into()));
+            }
             if buffer.len() < header.total() {
                 continue;
             }
@@ -256,10 +259,17 @@ async fn open(device: &JsValue) -> Result<Option<Link>, Error> {
             call_raw(device, "claimInterface", &[number.into()])
                 .await
                 .map_err(|error| {
-                    Error::Transport(format!(
-                        "could not claim the reader ({}); it is probably in use by the system smart card service",
-                        message(&error)
-                    ))
+                    // Chrome counts smart card readers as a protected USB class: ordinary pages may not
+                    // claim them, only Isolated Web Apps with the usb-unrestricted permission.
+                    let blocked = text(&error, "name").as_deref() == Some("SecurityError");
+                    Error::Transport(if blocked {
+                        "the browser does not let web pages use smart card readers; use the desktop app".into()
+                    } else {
+                        format!(
+                            "could not claim the reader ({}); it is probably in use by the system smart card service",
+                            message(&error)
+                        )
+                    })
                 })?;
         }
         let endpoints: Array = get(&alternate, "endpoints")?

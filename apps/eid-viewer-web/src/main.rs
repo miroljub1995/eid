@@ -37,18 +37,30 @@ mod web {
                         let (command_tx, command_rx) = mpsc::channel();
                         let ctx = cc.egui_ctx.clone();
                         if eid_webusb::is_supported() {
-                            wasm_bindgen_futures::spawn_local(eid_core::run(WebUsb::new(), command_rx, move |s| {
-                                if status_tx.send(s).is_ok() {
-                                    ctx.request_repaint();
-                                }
-                            }));
+                            wasm_bindgen_futures::spawn_local(eid_core::run(
+                                WebUsb::new(),
+                                command_rx,
+                                move |s| {
+                                    if status_tx.send(s).is_ok() {
+                                        ctx.request_repaint();
+                                    }
+                                },
+                            ));
                         } else {
                             let error = eid_core::Error::Transport(
-                                "Ovaj pregledač ne podržava WebUSB. Otvorite stranicu u Chrome-u ili Edge-u.".into(),
+                                "Ovaj pregledač ne podržava WebUSB. Otvorite stranicu u Chrome-u ili Edge-u."
+                                    .into(),
                             );
-                            status_tx.send(eid_core::Status::Failed { reader: None, error }).ok();
+                            status_tx
+                                .send(eid_core::Status::Failed { reader: None, error })
+                                .ok();
                         }
-                        Ok(Box::new(EidApp::new(&cc.egui_ctx, Box::new(Browser), status_rx, command_tx)))
+                        Ok(Box::new(EidApp::new(
+                            &cc.egui_ctx,
+                            Box::new(Browser),
+                            status_rx,
+                            command_tx,
+                        )))
                     }),
                 )
                 .await;
@@ -66,11 +78,17 @@ mod web {
             let parts = js_sys::Array::of1(&js_sys::Uint8Array::from(bytes.as_slice()));
             let options = web_sys::BlobPropertyBag::new();
             options.set_type("application/pdf");
-            let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &options).map_err(fail)?;
+            let blob =
+                web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &options).map_err(fail)?;
             let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(fail)?;
-            let document = web_sys::window().and_then(|w| w.document()).ok_or("no document")?;
-            let link: web_sys::HtmlAnchorElement =
-                document.create_element("a").map_err(fail)?.dyn_into().map_err(|_| "no <a>")?;
+            let document = web_sys::window()
+                .and_then(|w| w.document())
+                .ok_or("no document")?;
+            let link: web_sys::HtmlAnchorElement = document
+                .create_element("a")
+                .map_err(fail)?
+                .dyn_into()
+                .map_err(|_| "no <a>")?;
             link.set_href(&url);
             link.set_download(name);
             link.click();

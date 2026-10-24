@@ -585,11 +585,41 @@ fn bold() -> egui::FontFamily {
     egui::FontFamily::Name(BOLD.into())
 }
 
+/// The card's portrait is a few hundred pixels; anything far bigger is not a real photo and could
+/// exhaust memory or exceed the GPU's texture limit, so it is not shown.
+const MAX_PHOTO_SIDE: u32 = 2048;
+
 fn photo_texture(ctx: &egui::Context, jpeg: &[u8]) -> Option<TextureHandle> {
-    let image = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg)
-        .ok()?
-        .to_rgba8();
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(jpeg), image::ImageFormat::Jpeg);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_PHOTO_SIDE);
+    limits.max_image_height = Some(MAX_PHOTO_SIDE);
+    reader.limits(limits);
+    let image = reader.decode().ok()?.to_rgba8();
     let size = [image.width() as usize, image.height() as usize];
     let pixels = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
     Some(ctx.load_texture("photo", pixels, egui::TextureOptions::LINEAR))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn jpeg(width: u32, height: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        let image = image::GrayImage::new(width, height);
+        image
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Jpeg)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn refuses_photos_no_card_could_hold() {
+        let ctx = egui::Context::default();
+        assert!(photo_texture(&ctx, &jpeg(240, 320)).is_some());
+        // Would trip egui's texture size assertion (a panic) and allocate far too much.
+        assert!(photo_texture(&ctx, &jpeg(1, 20_000)).is_none());
+        assert!(photo_texture(&ctx, b"not a jpeg").is_none());
+    }
 }

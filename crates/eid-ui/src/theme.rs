@@ -50,10 +50,12 @@ const DARK: Tokens = Tokens {
 };
 
 pub(crate) const BOLD: &str = "bold";
+/// Liberation Sans Bold (SIL OFL 1.1); the regular weight comes from the PDF crate, which needs it too.
+const FONT_BOLD: &[u8] = include_bytes!("../../../assets/fonts/LiberationSans-Bold.ttf");
 
 pub(crate) fn install(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::empty();
-    for (name, data) in [("regular", eid_pdf::FONT_REGULAR), (BOLD, eid_pdf::FONT_BOLD)] {
+    for (name, data) in [("regular", eid_pdf::FONT_REGULAR), (BOLD, FONT_BOLD)] {
         fonts
             .font_data
             .insert(name.into(), FontData::from_static(data).into());
