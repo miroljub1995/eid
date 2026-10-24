@@ -13,7 +13,7 @@ pub struct Reader {
     pub has_card: bool,
 }
 
-/// How a platform reaches card readers: PC/SC on desktop, WebUSB in the browser, and so on.
+/// How a platform reaches card readers: PC/SC on desktop, and so on.
 pub trait Platform {
     type Card: SmartCard;
 
@@ -164,7 +164,7 @@ pub async fn run<P: Platform>(mut platform: P, commands: Receiver<Command>, mut 
 }
 
 /// The selected reader while it is there, else the first one holding a card, else the first one.
-fn pick<'a>(readers: &'a [Reader], selected: Option<&str>) -> Option<&'a Reader> {
+pub fn pick<'a>(readers: &'a [Reader], selected: Option<&str>) -> Option<&'a Reader> {
     selected
         .and_then(|name| readers.iter().find(|r| r.name == name))
         .or_else(|| readers.iter().find(|r| r.has_card))

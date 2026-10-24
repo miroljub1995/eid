@@ -1,6 +1,0 @@
-[build]
-target = "index.html"
-dist = "../../target/web-dist"
-
-[serve]
-port = 8765

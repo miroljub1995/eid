@@ -12,18 +12,11 @@ use egui_kittest::kittest::Queryable;
 use eid_core::{DocumentKind, EidDocument, Error, Event, Reader, Status};
 use eid_ui::{EidApp, Host};
 
-/// `pairing` stands in for the browser, where readers are granted one by one.
-struct NoHost {
-    pairing: bool,
-}
+struct NoHost;
 
 impl Host for NoHost {
     fn save_file(&self, _: &str, _: Vec<u8>) -> Result<Option<String>, String> {
         Ok(None)
-    }
-
-    fn can_pair_reader(&self) -> bool {
-        self.pairing
     }
 }
 
@@ -78,21 +71,18 @@ fn main() {
         ..sample()
     };
     let states = [
-        ("no-reader", Status::NoReader, false),
-        ("no-reader-pair", Status::NoReader, true),
+        ("no-reader", Status::NoReader),
         (
             "no-card",
             Status::NoCard {
                 reader: reader.clone(),
             },
-            true,
         ),
         (
             "reading",
             Status::Reading {
                 reader: reader.clone(),
             },
-            false,
         ),
         (
             "ready",
@@ -100,7 +90,6 @@ fn main() {
                 reader: reader.clone(),
                 document: Arc::new(sample()),
             },
-            false,
         ),
         (
             "foreigner-expired",
@@ -108,7 +97,6 @@ fn main() {
                 reader: reader.clone(),
                 document: Arc::new(foreigner),
             },
-            false,
         ),
         (
             "failed",
@@ -116,7 +104,6 @@ fn main() {
                 reader: Some(reader.clone()),
                 error: Error::Transport("Card was removed".into()),
             },
-            false,
         ),
         (
             "unknown-card",
@@ -124,7 +111,6 @@ fn main() {
                 reader: Some(reader.clone()),
                 error: Error::UnknownCard("3B00".into()),
             },
-            false,
         ),
     ];
     let one = vec![Reader {
@@ -145,20 +131,20 @@ fn main() {
         reader: reader.clone(),
         document: Arc::new(sample()),
     };
-    let mut scenes: Vec<(&str, Status, bool, Vec<Reader>, bool)> = states
+    let mut scenes: Vec<(&str, Status, Vec<Reader>, bool)> = states
         .into_iter()
-        .map(|(name, status, pairing)| {
+        .map(|(name, status)| {
             let readers = if matches!(status, Status::NoReader) {
                 vec![]
             } else {
                 one.clone()
             };
-            (name, status, pairing, readers, false)
+            (name, status, readers, false)
         })
         .collect();
-    scenes.push(("two-readers", ready.clone(), false, two.clone(), false));
-    scenes.push(("two-readers-open", ready, false, two, true));
-    for (name, status, pairing, readers, open_picker) in scenes {
+    scenes.push(("two-readers", ready.clone(), two.clone(), false));
+    scenes.push(("two-readers-open", ready, two, true));
+    for (name, status, readers, open_picker) in scenes {
         for (theme, suffix, size) in [
             (egui::Theme::Light, "", [960.0, 820.0]),
             (egui::Theme::Dark, "-dark", [960.0, 820.0]),
@@ -173,7 +159,7 @@ fn main() {
                 .with_size(size)
                 .with_theme(theme)
                 .wgpu()
-                .build_eframe(|cc| EidApp::new(&cc.egui_ctx, Box::new(NoHost { pairing }), rx, commands));
+                .build_eframe(|cc| EidApp::new(&cc.egui_ctx, Box::new(NoHost), rx, commands));
             harness.run_steps(4);
             if open_picker {
                 harness.get_by_label("Čitač iz koga se čita kartica").click();

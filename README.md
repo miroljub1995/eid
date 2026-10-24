@@ -5,8 +5,8 @@ print-out as the official "Čitač elektronske lične karte". A Rust port of
 [jfreesteel's eidviewer](https://github.com/grakic/jfreesteel/tree/eidviewer-1.1), with the newer card
 types from [Baš Čelik](https://github.com/ubavic/bas-celik).
 
-One codebase, egui for the interface. Desktop builds read cards through the system smart card service
-(PC/SC), and the browser build talks to the USB reader directly through WebUSB.
+One codebase, egui for the interface. The desktop app reads cards through the system smart card service
+(PC/SC) on macOS, Windows and Linux.
 
 Supported cards: ID cards issued before 18 Aug 2014 (Apollo) and after (Gemalto and newer), ID cards for
 foreigners, and residence permits.
@@ -24,21 +24,8 @@ cargo run -p eid-cli -- --pdf lična-karta.pdf
 The CLI waits for a card, prints the data and can save the PDF (`--pdf`) and the photo (`--photo`).
 With several readers attached, `--reader NAME` picks one; the app has a reader picker in its header.
 
-**Browser.** Needs a Chromium browser (Chrome, Edge), because they are the only ones with WebUSB. Build
-with [trunk](https://trunkrs.dev):
-
-```bash
-cd apps/eid-viewer-web && trunk build --release
-```
-
-The page is written to `target/web-dist`. Serve it over HTTPS or from localhost, open it, then click
-**Poveži čitač** and pick the reader.
-
-Chrome treats smart card readers as a protected USB class: an ordinary web page may list a reader but
-not claim it. The app then says so plainly. The browser build works as an
-[Isolated Web App](https://github.com/WICG/isolated-web-apps), which can be granted the
-`usb-unrestricted` permission. It also needs a machine where the operating system's smart card
-service isn't holding the reader. Everywhere else, use the desktop app.
+There is no browser build: browsers don't let web pages use smart card readers (Chrome counts them as a
+protected USB class).
 
 ## Layout
 
@@ -47,17 +34,15 @@ crates/
   eid-core     protocol and data model: APDUs, file reading, TLV parsing, the official field order,
                and the SmartCard / Platform traits and the reader watcher (run). No I/O.
   eid-pcsc     Platform over PC/SC: macOS, Windows, Linux (pcsc-lite)
-  eid-webusb   Platform over WebUSB: CCID messages straight to a USB reader (wasm only)
-  eid-pdf      the A4 print-out (krilla, pure Rust, also works in the browser)
+  eid-pdf      the A4 print-out (krilla, pure Rust)
   eid-ui       the egui interface; the platform comes in through the Host trait and a status channel
 apps/
   eid-viewer       desktop app (eframe + PC/SC)
-  eid-viewer-web   browser app (eframe on wasm + WebUSB), built with trunk
   eid-cli          terminal reader, also the quickest way to test a reader
 ```
 
 Dependencies only point down the list: `eid-core` knows nothing about readers, PDF or UI, and `eid-ui`
-knows nothing about PC/SC or WebUSB.
+knows nothing about PC/SC.
 
 ### Reaching the reader
 
@@ -78,7 +63,7 @@ pub trait Platform {
 }
 ```
 
-They are async because WebUSB is. A blocking backend like PC/SC just does its work inside the future and
+They are async so that backends built on callback or async APIs (Android, iPadOS) fit. A blocking backend like PC/SC just does its work inside the future and
 runs on its own thread under `pollster`. `eid_core::run(platform, commands, emit)` watches the readers
 and reads a card when one is inserted, from the reader picked with `Command::Select` or else the first
 one holding a card. It reports the reader list and a `Status` (`NoReader`, `NoCard`, `Reading`, `Ready`,
@@ -90,9 +75,7 @@ To add a platform, implement the two traits in a new crate and start `run` from 
 | Platform | How to reach the reader |
 |---|---|
 | macOS, Windows, Linux | `eid-pcsc` (done) |
-| Browser | `eid-webusb` (done; CCID, APDU-level readers) |
-| Linux/Windows without PC/SC | raw USB with `nusb`: the CCID codec in `eid-webusb/src/ccid.rs` can be reused |
-| Android | USB host API (CCID over bulk endpoints, the same codec) through JNI |
+| Android | USB host API (CCID over bulk endpoints) through JNI; the CCID codec of the removed `eid-webusb` crate (commit 2b58b18) is a starting point |
 | iPadOS | CryptoTokenKit `TKSmartCard` with a USB-C reader |
 
 ## Development
@@ -120,7 +103,7 @@ indexing, and `unsafe` is forbidden.
 The print-out replicates the official reader's, which Windows lays out with GDI at 600 dpi. Every rule,
 box and baseline uses the original's coordinates. Each glyph sits where GDI put it: its width is
 hinted (TrueType, monochrome) at the 600 dpi size and rounded to whole device pixels. Liberation Sans
-hints to the same widths as Arial, so the positions are right on every platform, the browser included.
+hints to the same widths as Arial, so the positions are right on every platform.
 For the glyph shapes, the PDF uses the system's own Arial where there is one (macOS, Windows,
 msttcorefonts); it is read at run time and never shipped. Otherwise it uses Liberation Sans.
 

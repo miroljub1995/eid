@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 eid-core = { workspace = true }
-# Pure Rust, so the same PDF comes out in the browser. JPEG photos pass through unchanged.
+# Pure Rust, so the same PDF comes out on every platform. JPEG photos pass through unchanged.
 krilla = { version = "0.8", default-features = false, features = ["simple-text", "raster-images"] }
 # TrueType hinting, to place glyphs where Windows GDI placed them in the official print. The same
 # version krilla already uses.

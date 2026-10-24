@@ -1,5 +1,5 @@
 //! The viewer's interface. Platform specifics come in through [`Host`] and the status channel, so the
-//! same UI runs on the desktop (PC/SC) and in the browser (WebUSB).
+//! same UI can run over any reader backend.
 
 mod theme;
 
@@ -17,17 +17,9 @@ use theme::{BOLD, Tokens};
 
 /// What the UI needs from the platform it runs on.
 pub trait Host {
-    /// Lets the user save `bytes` as `name` (a save dialog on the desktop, a download in the browser).
+    /// Lets the user save `bytes` as `name`, e.g. through a save dialog.
     /// Returns where it went, or `None` if the user cancelled.
     fn save_file(&self, name: &str, bytes: Vec<u8>) -> Result<Option<String>, String>;
-
-    /// Whether readers must be granted to the app one by one (WebUSB) before they show up.
-    fn can_pair_reader(&self) -> bool {
-        false
-    }
-
-    /// Asks the user to grant a reader. Only called when [`Host::can_pair_reader`] is true, from a click.
-    fn pair_reader(&self) {}
 }
 
 pub struct EidApp {
@@ -195,16 +187,6 @@ impl EidApp {
         if shortcuts {
             self.reader_picker(ui, t, 220.0);
         }
-        // With no reader at all, the empty state offers pairing instead.
-        let pair = self.host.can_pair_reader() && !matches!(self.status, Status::NoReader);
-        if pair
-            && ui
-                .button("Poveži čitač")
-                .on_hover_text("Dozvoli pregledaču pristup još jednom USB čitaču")
-                .clicked()
-        {
-            self.host.pair_reader();
-        }
     }
 
     /// Which reader to read from, once there is more than one to choose.
@@ -246,7 +228,25 @@ impl EidApp {
             self.selected = choice.clone();
             // The watcher only stops when the app closes, so a send cannot fail while the UI is up.
             self.commands.send(Command::Select(choice)).ok();
+            self.show_switch();
         }
+    }
+
+    /// Shows the newly picked reader at once: the watcher only notices the selection after its
+    /// current wait for reader events, which would leave the other reader's card on screen meanwhile.
+    fn show_switch(&mut self) {
+        let next = match eid_core::pick(&self.readers, self.selected.as_deref()) {
+            None => Status::NoReader,
+            Some(reader) if Some(reader.name.as_str()) == status_reader(&self.status) => return,
+            Some(reader) if reader.has_card => Status::Reading {
+                reader: reader.name.clone(),
+            },
+            Some(reader) => Status::NoCard {
+                reader: reader.name.clone(),
+            },
+        };
+        self.photo = None;
+        self.status = next;
     }
 
     fn status_bar(&mut self, ui: &mut Ui, t: Tokens) {
@@ -305,24 +305,8 @@ impl EidApp {
                 );
             }
             Status::NoReader => {
-                let pair = self.host.can_pair_reader();
-                let hint = if pair {
-                    "Priključite USB čitač kartica i dozvolite pregledaču pristup njemu."
-                } else {
-                    "Priključite čitač kartica na računar."
-                };
-                let action = pair.then_some("Poveži čitač");
-                if empty_state(
-                    ui,
-                    t,
-                    Art::Card(t.muted),
-                    "Čitač nije pronađen",
-                    hint,
-                    None,
-                    action,
-                ) {
-                    self.host.pair_reader();
-                }
+                let hint = "Priključite čitač kartica na računar.";
+                empty_state(ui, t, Art::Card(t.muted), "Čitač nije pronađen", hint, None, None);
             }
             Status::Failed { reader, error } => {
                 let (title, hint) = describe(error, reader.is_some());
@@ -630,15 +614,19 @@ fn card_icon(ui: &mut Ui, width: f32, color: Color32) {
     }
 }
 
+fn status_reader(status: &Status) -> Option<&str> {
+    match status {
+        Status::NoReader => None,
+        Status::NoCard { reader } | Status::Reading { reader } | Status::Ready { reader, .. } => Some(reader),
+        Status::Failed { reader, .. } => reader.as_deref(),
+    }
+}
+
 fn describe(error: &Error, reading: bool) -> (&'static str, &'static str) {
     match error {
         Error::UnknownCard(_) => (
             "Kartica nije prepoznata",
             "Ovo nije srpska lična karta, ili ovaj tip kartice još nije podržan.",
-        ),
-        Error::NotAllowed(_) => (
-            "Pregledač ne dozvoljava pristup čitaču",
-            "Pregledači ne puštaju veb stranice do čitača kartica. Koristite desktop aplikaciju.",
         ),
         _ if reading => (
             "Čitanje kartice nije uspelo",
@@ -679,6 +667,42 @@ mod tests {
             .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Jpeg)
             .unwrap();
         out
+    }
+
+    struct NoHost;
+
+    impl Host for NoHost {
+        fn save_file(&self, _: &str, _: Vec<u8>) -> Result<Option<String>, String> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn switching_readers_shows_the_new_one_at_once() {
+        let (_events, rx) = std::sync::mpsc::channel();
+        let (tx, commands) = std::sync::mpsc::channel();
+        let mut app = EidApp::new(&egui::Context::default(), Box::new(NoHost), rx, tx);
+        let reader = |name: &str, has_card| Reader {
+            name: name.into(),
+            has_card,
+        };
+        app.readers = vec![reader("A", true), reader("B", true), reader("C", false)];
+        app.status = Status::Ready {
+            reader: "A".into(),
+            document: Arc::default(),
+        };
+
+        app.selected = Some("B".into());
+        app.show_switch();
+        assert!(matches!(&app.status, Status::Reading { reader } if reader == "B"));
+        app.selected = Some("C".into());
+        app.show_switch();
+        assert!(matches!(&app.status, Status::NoCard { reader } if reader == "C"));
+        // Back to automatic picks A again, which holds a card.
+        app.selected = None;
+        app.show_switch();
+        assert!(matches!(&app.status, Status::Reading { reader } if reader == "A"));
+        drop(commands);
     }
 
     #[test]

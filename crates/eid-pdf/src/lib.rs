@@ -187,7 +187,6 @@ pub fn render(doc: &EidDocument, printed_on: &str) -> Result<Vec<u8>, String> {
 /// The official print is set in Arial. Where the system has it, use it (read at run time, never
 /// shipped): the glyphs then match exactly. Otherwise Liberation Sans keeps every position the same.
 fn system_arial() -> Option<Vec<u8>> {
-    #[cfg(not(target_arch = "wasm32"))]
     for path in [
         "/System/Library/Fonts/Supplemental/Arial.ttf",
         "/Library/Fonts/Arial.ttf",

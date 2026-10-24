@@ -5,7 +5,7 @@ use std::future::Future;
 use crate::apdu::{self, SW_END_OF_FILE, SW_OK};
 use crate::{DocumentKind, EidDocument, Error, hex};
 
-/// One inserted card, reached however the platform reaches it (PC/SC, CCID over WebUSB, NFC, ...).
+/// One inserted card, reached however the platform reaches it (PC/SC, CCID over raw USB, ...).
 pub trait SmartCard {
     /// The card's Answer To Reset.
     fn atr(&self) -> &[u8];

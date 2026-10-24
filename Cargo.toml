@@ -1,8 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*"]
-# The web app only builds for wasm32; `cargo build` on the host skips it.
-default-members = ["crates/eid-core", "crates/eid-pdf", "crates/eid-pcsc", "crates/eid-ui", "apps/eid-viewer", "apps/eid-cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,7 +12,6 @@ rust-version = "1.88"
 eid-core = { path = "crates/eid-core" }
 eid-pdf = { path = "crates/eid-pdf" }
 eid-pcsc = { path = "crates/eid-pcsc" }
-eid-webusb = { path = "crates/eid-webusb" }
 eid-ui = { path = "crates/eid-ui" }
 
 thiserror = "2"
@@ -37,10 +34,3 @@ todo = "warn"
 [profile.release]
 lto = "thin"
 codegen-units = 1
-
-# The browser build: the wasm is downloaded on every visit.
-[profile.wasm-release]
-inherits = "release"
-opt-level = "z"
-lto = "fat"
-strip = "debuginfo"

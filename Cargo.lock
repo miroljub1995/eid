@@ -571,9 +571,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
- "js-sys",
  "num-traits",
- "wasm-bindgen",
  "windows-link",
 ]
 
@@ -1001,30 +999,6 @@ dependencies = [
  "eid-ui",
  "pollster 0.4.0",
  "rfd",
-]
-
-[[package]]
-name = "eid-viewer-web"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "eid-core",
- "eid-ui",
- "eid-webusb",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "eid-webusb"
-version = "0.1.0"
-dependencies = [
- "eid-core",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
 ]
 
 [[package]]
