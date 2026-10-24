@@ -2,6 +2,9 @@
 //!
 //! `cargo run -p eid-ui --example snapshot -- <out-dir>`
 
+// A developer tool: failing loudly is the right behaviour.
+#![allow(clippy::expect_used)]
+
 use std::sync::{Arc, mpsc};
 
 use egui_kittest::Harness;
