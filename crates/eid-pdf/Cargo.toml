@@ -12,5 +12,6 @@ workspace = true
 eid-core = { workspace = true }
 # Pure Rust, so the same PDF comes out in the browser. JPEG photos pass through unchanged.
 krilla = { version = "0.8", default-features = false, features = ["simple-text", "raster-images"] }
-# Glyph advances for line wrapping; the same version krilla's shaper already uses.
-ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
+# TrueType hinting, to place glyphs where Windows GDI placed them in the official print. The same
+# version krilla already uses.
+skrifa = "0.42"

@@ -975,7 +975,7 @@ version = "0.1.0"
 dependencies = [
  "eid-core",
  "krilla",
- "ttf-parser",
+ "skrifa 0.42.1",
 ]
 
 [[package]]

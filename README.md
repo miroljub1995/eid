@@ -109,6 +109,21 @@ holder. Use it to check UI changes without a card.
 Non-test code never panics on card data: the workspace lints warn on `unwrap`, `expect`, `panic` and
 indexing, and `unsafe` is forbidden.
 
+## The PDF
+
+The print-out replicates the official reader's, which Windows lays out with GDI at 600 dpi. Every rule,
+box and baseline uses the original's coordinates. Each glyph sits where GDI put it: its width is
+hinted (TrueType, monochrome) at the 600 dpi size and rounded to whole device pixels. Liberation Sans
+hints to the same widths as Arial, so the positions are right on every platform, the browser included.
+For the glyph shapes, the PDF uses the system's own Arial where there is one (macOS, Windows,
+msttcorefonts); it is read at run time and never shipped. Otherwise it uses Liberation Sans.
+
+Compared against an official print of the same card:
+- **At 96 dpi:** 2 pixels differ noticeably.
+- **At 150 to 600 dpi:** 0.3–0.6% of pixels differ, all antialiasing on glyph edges; every glyph is
+  within 0.06 pt.
+- **The photo:** it is the card's own JPEG; the official reader re-encodes it.
+
 ## Licences
 
 The code is MIT. Liberation Sans (`assets/fonts`) is under the SIL Open Font License 1.1. It is
