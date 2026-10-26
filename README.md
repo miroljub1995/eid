@@ -110,8 +110,45 @@ apps/
   eid-cli          terminal reader, also the quickest way to test a reader
 ```
 
-Dependencies only point down the list: `eid-core` knows nothing about readers, PDF or UI, and `eid-ui`
-knows nothing about PC/SC.
+```mermaid
+flowchart TB
+    viewer["eid-viewer<br/>desktop"]
+    cli["eid-cli<br/>terminal"]
+    ios["eid-ios<br/>iPhone, iPad"]
+    android["eid-android<br/>Android"]
+
+    pcsc["eid-pcsc<br/>PC/SC"]
+    ui["eid-ui<br/>egui screens"]
+    ctk["eid-ctk<br/>CryptoTokenKit"]
+    usb["eid-android-usb<br/>USB host via JNI"]
+
+    pdf["eid-pdf<br/>A4 print-out"]
+    ccid["eid-ccid<br/>CCID protocol"]
+
+    core["eid-core<br/>card protocol, data model,<br/>reader traits, watcher"]
+
+    viewer --> pcsc
+    viewer --> ui
+    cli --> pcsc
+    cli --> pdf
+    ios --> ui
+    ios --> ctk
+    android --> ui
+    android --> usb
+    ui --> pdf
+    usb --> ccid
+    pcsc & ui & ctk & usb & pdf & ccid --> core
+    cli --> core
+
+    classDef app fill:#e1f5ee,stroke:#0f6e56,color:#085041
+    classDef reader fill:#faece7,stroke:#993c1d,color:#712b13
+    class viewer,cli,ios,android app
+    class pcsc,ctk,usb,ccid reader
+```
+
+Arrows point to what a crate uses; green are apps, orange the reader backends. `eid-core` knows nothing about readers, PDF or UI; `eid-ui` knows
+nothing about how readers are reached. Each app picks one reader backend and starts the core's watcher
+with it.
 
 ### Reaching the reader
 
