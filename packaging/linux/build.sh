@@ -17,14 +17,17 @@ docker run --rm -v "$root":/src -w /src -e CARGO_TARGET_DIR=/src/target/linux-mu
     apk add -q build-base meson ninja flex curl xz > /dev/null
     lib=$(packaging/linux/pcsclite.sh /tmp/pcsclite)
     PCSC_LIB_DIR=$lib PCSC_LIB_NAME=static=pcsclite cargo build --release --locked -p eid-cli
-    if ldd target/linux-musl/release/eid > /dev/null 2>&1; then echo "eid is not static" >&2; exit 1; fi
+    # A static binary has no NEEDED entries (ldd is no test: it runs static PIEs on x86_64).
+    if readelf -d target/linux-musl/release/eid | grep -q NEEDED; then echo "eid is not static" >&2; exit 1; fi
     cp target/linux-musl/release/eid target/linux-dist/'
 
 docker run --rm -v "$root":/src -w /src -e CARGO_TARGET_DIR=/src/target/linux-glibc rust:1.99-bookworm sh -euc '
     apt-get update -qq && apt-get install -y -qq --no-install-recommends meson ninja-build flex xz-utils > /dev/null
     lib=$(packaging/linux/pcsclite.sh /tmp/pcsclite)
     PCSC_LIB_DIR=$lib PCSC_LIB_NAME=static=pcsclite cargo build --release --locked -p eid-viewer
-    if ldd target/linux-glibc/release/eid-viewer | grep -q pcsclite; then echo "libpcsclite is not linked in" >&2; exit 1; fi
+    if readelf -d target/linux-glibc/release/eid-viewer | grep NEEDED | grep -q pcsclite; then
+        echo "libpcsclite is not linked in" >&2; exit 1
+    fi
     cp target/linux-glibc/release/eid-viewer target/linux-dist/'
 
 echo "$root/target/linux-dist"

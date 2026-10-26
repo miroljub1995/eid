@@ -78,6 +78,8 @@ jobs:
   linux:
     needs: test
     strategy:
+      # Let both architectures finish, so one failure doesn't hide the other's result.
+      fail-fast: false
       matrix:
         include:
           - arch: x64
