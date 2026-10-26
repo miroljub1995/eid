@@ -12,7 +12,7 @@ TARGET=aarch64-apple-ios
 TARGET_DIR=${CARGO_TARGET_DIR:-../../target}
 
 cargo build --release --target "$TARGET" -p eid-ios
-out="$TARGET_DIR/$TARGET/release"
+out=$(cd "$TARGET_DIR/$TARGET/release" && pwd)
 rm -rf "$out/Payload" && mkdir -p "$out/Payload/eID.app"
 app="$out/Payload/eID.app"
 cp "$out/eid-ios" "$app/"
