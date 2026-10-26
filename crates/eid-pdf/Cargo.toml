@@ -1,0 +1,17 @@
+[package]
+name = "eid-pdf"
+description = "The eID print-out as a PDF, laid out like the official reader's"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+eid-core = { workspace = true }
+# Pure Rust, so the same PDF comes out on every platform. JPEG photos pass through unchanged.
+krilla = { version = "0.8", default-features = false, features = ["simple-text", "raster-images"] }
+# TrueType hinting, to place glyphs where Windows GDI placed them in the official print. The same
+# version krilla already uses.
+skrifa = "0.42"

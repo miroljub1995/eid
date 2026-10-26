@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.dependencies]
+eid-core = { path = "crates/eid-core" }
+eid-pdf = { path = "crates/eid-pdf" }
+eid-pcsc = { path = "crates/eid-pcsc" }
+eid-ctk = { path = "crates/eid-ctk" }
+eid-ccid = { path = "crates/eid-ccid" }
+eid-android-usb = { path = "crates/eid-android-usb" }
+eid-ui = { path = "crates/eid-ui" }
+
+thiserror = "2"
+pollster = "0.4"
+eframe = { version = "0.37", default-features = false }
+egui = { version = "0.37", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

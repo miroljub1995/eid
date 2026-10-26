@@ -1,0 +1,22 @@
+[package]
+name = "eid-ios"
+description = "Serbian eID viewer for iPadOS and iOS: USB-C card readers through CryptoTokenKit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "eid-ios"
+path = "src/main.rs"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+eid-core = { workspace = true }
+eid-ctk = { workspace = true }
+eid-ui = { workspace = true }
+# wgpu draws through Metal; there is no OpenGL on iOS.
+eframe = { workspace = true, features = ["wgpu", "accesskit"] }
+pollster = { workspace = true }

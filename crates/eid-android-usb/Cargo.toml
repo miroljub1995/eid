@@ -1,0 +1,27 @@
+[package]
+name = "eid-android-usb"
+description = "Reaches USB card readers on Android through the USB host API, speaking CCID"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# JNI needs `unsafe` to adopt the VM and Activity pointers Android hands over, so this crate relaxes
+# the workspace's `forbid` to `deny` and allows it in its one module of glue.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[dependencies]
+eid-core = { workspace = true }
+eid-ccid = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
